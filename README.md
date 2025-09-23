@@ -4,10 +4,12 @@ taboor-app/
 │   ├── css/
 │   ├── js/
 │   └── assets/
+-----------------------------------
 ├── backend/
 │   ├── server.js
 │   ├── routes/
 │   ├── models/
 │   └── utils/
+-----------------------------------
 └── database/
     └── taboor.db
