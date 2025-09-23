@@ -1,16 +1,17 @@
 taboor-app ->
-├── frontend/
+------------------------------------
+1- frontend/
 │   ├── index.html
 │   ├── css/
 │   ├── js/
 │   └── assets/
 -----------------------------------
-├── backend ->
+2- backend ->
 │   ├── server.js
 │   ├── routes/
 │   ├── models/
 │   └── utils/
 -----------------------------------
-└── database->
+3-  database->
     └── taboor.db
 -----------------------------------
