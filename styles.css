@@ -1,0 +1,49 @@
+/* Header with gradient like your image */
+.card-header-gradient {
+    background: linear-gradient(135deg, #2196F3 0%, #00BCD4 100%);
+    color: white;
+    text-align: center;
+    padding: 40px 20px;
+    border-radius: 15px 15px 0 0;
+}
+
+.card-header-gradient h1 {
+    font-size: 2.5rem;
+    font-weight: bold;
+    margin: 0;
+}
+
+.card-header-gradient p {
+    margin: 5px 0 0 0;
+    opacity: 0.9;
+}
+
+/* Custom button with gradient */
+.btn-gradient {
+    background: linear-gradient(135deg, #2196F3 0%, #00BCD4 100%);
+    border: none;
+    color: white;
+    padding: 12px;
+    border-radius: 8px;
+}
+
+.btn-gradient:hover {
+    background: linear-gradient(135deg, #1976D2 0%, #0097A7 100%);
+    color: white;
+}
+
+/* Card styling */
+.card {
+    border-radius: 15px;
+    border: none;
+}
+
+/* Links */
+a {
+    color: #2196F3;
+    text-decoration: none;
+}
+
+a:hover {
+    color: #1976D2;
+}

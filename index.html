@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>طابور - تسجيل الدخول</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.rtl.min.css" rel="stylesheet">
+    
+    <!-- Bootstrap Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link href="styles.css" rel="stylesheet">
+</head>
+<body class="bg-light">
+    
+    <!-- Main Container -->
+    <div class="container mt-5">
+        <div class="row justify-content-center">
+            <div class="col-md-6 col-lg-5">
+                
+                <!-- Login Form -->
+                <div class="card shadow" id="login-form">
+                    <!-- Header with gradient -->
+                    <div class="card-header-gradient">
+                        <h1>طابور</h1>
+                        <p>إدارة الطوابير الذكية</p>
+                    </div>
+                    
+                    <!-- Form Body -->
+                    <div class="card-body p-4">
+                        <div class="text-center mb-4">
+                            <h3>أهلاً بعودتك</h3>
+                            <p class="text-muted">سجل دخولك لحسابك</p>
+                        </div>
+                        
+                        <form>
+                            <!-- Email Input -->
+                            <div class="mb-3">
+                                <label class="form-label">البريد الإلكتروني</label>
+                                <input type="email" class="form-control" placeholder="أدخل بريدك الإلكتروني" required>
+                            </div>
+                            
+                            <!-- Password Input -->
+                            <div class="mb-3">
+                                <label class="form-label">كلمة المرور</label>
+                                <input type="password" class="form-control" placeholder="أدخل كلمة المرور" required>
+                            </div>
+                            
+                            <!-- Forgot Password -->
+                            <div class="text-end mb-3">
+                                <a href="#" class="text-primary">نسيت كلمة المرور؟</a>
+                            </div>
+                            
+                            <!-- Submit Button -->
+                            <div class="d-grid mb-3">
+                                <button type="submit" class="btn btn-gradient">
+                                    <i class="bi bi-arrow-left me-2"></i>
+                                    تسجيل الدخول
+                                </button>
+                            </div>
+                        </form>
+                        
+                        <!-- Register Link -->
+                        <div class="text-center">
+                            <p>ليس لديك حساب؟ <a href="#" id="show-register">اشترك</a></p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Register Form (Hidden) -->
+                <div class="card shadow d-none" id="register-form">
+                    <!-- Header -->
+                    <div class="card-header-gradient">
+                        <h1>طابور</h1>
+                        <p>إدارة الطوابير الذكية</p>
+                    </div>
+                    
+                    <!-- Form Body -->
+                    <div class="card-body p-4">
+                        <div class="text-center mb-4">
+                            <h3>إنشاء حساب جديد</h3>
+                            <p class="text-muted">انضم إلى طابور اليوم</p>
+                        </div>
+                        
+                        <form>
+                            <!-- Name -->
+                            <div class="mb-3">
+                                <label class="form-label">الاسم الكامل</label>
+                                <input type="text" class="form-control" required>
+                            </div>
+                            
+                            <!-- Email -->
+                            <div class="mb-3">
+                                <label class="form-label">البريد الإلكتروني</label>
+                                <input type="email" class="form-control" required>
+                            </div>
+                            
+                            <!-- Phone -->
+                            <div class="mb-3">
+                                <label class="form-label">رقم الهاتف</label>
+                                <input type="tel" class="form-control" placeholder="+966 5X XXX XXXX" required>
+                            </div>
+                            
+                            <!-- Password -->
+                            <div class="mb-3">
+                                <label class="form-label">كلمة المرور</label>
+                                <input type="password" class="form-control" required>
+                            </div>
+                            
+                            <!-- Submit -->
+                            <div class="d-grid mb-3">
+                                <button type="submit" class="btn btn-gradient">إنشاء الحساب</button>
+                            </div>
+                        </form>
+                        
+                        <!-- Login Link -->
+                        <div class="text-center">
+                            <p>لديك حساب بالفعل؟ <a href="#" id="show-login">سجل دخولك</a></p>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Custom JS -->
+    <script src="main.js"></script>
+</body>
+</html>
