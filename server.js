@@ -1,72 +1,73 @@
-const express = require('express');
-const sqlite3 = require('sqlite3').verbose();
-const bcrypt = require('bcrypt');
-const cors = require('cors');
+// Wait for page to load
+document.addEventListener('DOMContentLoaded', function() {
 
-const app = express();
-const PORT = 3000;
+    // Get form elements
+    const loginForm = document.getElementById('login-form');
+    const registerForm = document.getElementById('register-form');
+    const showRegisterLink = document.getElementById('show-register');
+    const showLoginLink = document.getElementById('show-login');
 
-// Middleware
-app.use(express.json());
-app.use(cors());
+    // Show register form
+    showRegisterLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        loginForm.classList.add('d-none');
+        registerForm.classList.remove('d-none');
+    });
 
-// Database setup (SQLite)
-const db = new sqlite3.Database('./taboor.db', (err) => {
-  if (err) {
-    console.error('Error opening database:', err.message);
-  } else {
-    console.log('Connected to SQLite database.');
+    // Show login form  
+    showLoginLink.addEventListener('click', function(e) {
+        e.preventDefault();
+        registerForm.classList.add('d-none');
+        loginForm.classList.remove('d-none');
+    });
 
-    db.run(`CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE,
-      password TEXT
-    )`);
-  }
-});
+    // Handle login submit
+    loginForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const username = loginForm.username.value;
+        const password = loginForm.password.value;
 
-// Register route
-app.post('/register', (req, res) => {
-  const { username, password } = req.body;
+        fetch('http://localhost:3000/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert('Login failed: ' + data.error);
+            } else {
+                alert('Login successful! User ID: ' + data.userId);
+                loginForm.reset();
+            }
+        })
+        .catch(err => alert('Error: ' + err));
+    });
 
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' });
-  }
+    // Handle register submit
+    registerForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const username = registerForm.username.value;
+        const password = registerForm.password.value;
 
-  const hashedPassword = bcrypt.hashSync(password, 10);
+        fetch('http://localhost:3000/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.error) {
+                alert('Registration failed: ' + data.error);
+            } else {
+                alert('Registration successful! User ID: ' + data.userId);
+                registerForm.reset();
+                // Switch back to login form
+                registerForm.classList.add('d-none');
+                loginForm.classList.remove('d-none');
+            }
+        })
+        .catch(err => alert('Error: ' + err));
+    });
 
-  db.run(
-    `INSERT INTO users (username, password) VALUES (?, ?)`,
-    [username, hashedPassword],
-    function (err) {
-      if (err) {
-        return res.status(400).json({ error: 'User already exists' });
-      }
-      res.json({ message: 'User registered successfully', userId: this.lastID });
-    }
-  );
-});
-
-// Login route
-app.post('/login', (req, res) => {
-  const { username, password } = req.body;
-
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password required' });
-  }
-
-  db.get(`SELECT * FROM users WHERE username = ?`, [username], (err, user) => {
-    if (err) {
-      return res.status(500).json({ error: 'Database error' });
-    }
-    if (!user || !bcrypt.compareSync(password, user.password)) {
-      return res.status(401).json({ error: 'Invalid username or password' });
-    }
-    res.json({ message: 'Login successful', userId: user.id });
-  });
-});
-
-// Start server
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
 });
