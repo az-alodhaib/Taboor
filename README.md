@@ -9,8 +9,6 @@ taboor-app intial structre
 2- backend ->
 │   ├── server.js
 │   ├── routes/
-│   ├── models/
-│   └── utils/
 -----------------------------------
 3-  database ->
  │   └── taboor.db
