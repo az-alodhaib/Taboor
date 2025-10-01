@@ -1,28 +1,4 @@
-taboor-app 
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
-|
+taboor-app intial structre
 ------------------------------------
 1- frontend ->
 │   ├── index.html
