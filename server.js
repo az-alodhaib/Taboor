@@ -3,11 +3,11 @@
 // =============================================
 // Think of these as tools we need to build our server
 
-const express = require('express');        // Framework to build web server
-const sqlite3 = require('sqlite3').verbose(); // Database to store user data
-const bcrypt = require('bcrypt');          // Tool to encrypt passwords
-const cors = require('cors');              // Allow frontend to talk to backend
-const bodyParser = require('body-parser'); // Tool to read data from forms
+const express = require('express');            // Web framework
+const sqlite3 = require('sqlite3').verbose();  // Database to store user data
+const bcrypt = require('bcrypt');              // Tool to encrypt passwords
+const cors = require('cors');                  // Allow frontend to talk to backend
+const bodyParser = require('body-parser');     // Tool to read data from forms
 
 // =============================================
 // STEP 2: Create the Application
@@ -37,31 +37,125 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // =============================================
 // Create/Open database file named 'taboor.db'
 const db = new sqlite3.Database('./taboor.db', (err) => {
-    if (err) {
-        console.error('Error opening database:', err.message);
-    } else {
-        console.log('Connected to SQLite database');
-    }
+  if (err) {
+    console.error('Error opening database:', err.message);
+  } else {
+    console.log('Connected to SQLite database');
+  }
 });
 
 // Create users table if it doesn't exist
 // This table will store: id, name, email, phone, password
 db.run(`
-    CREATE TABLE IF NOT EXISTS users (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        email TEXT UNIQUE NOT NULL,
-        phone TEXT,
-        password TEXT NOT NULL,
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    email TEXT UNIQUE NOT NULL,
+    phone TEXT,
+    password TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
 `, (err) => {
-    if (err) {
-        console.error('Error creating table:', err.message);
-    } else {
-        console.log('Users table ready');
-    }
+  if (err) {
+    console.error('Error creating table:', err.message);
+  } else {
+    console.log('Users table ready');
+  }
 });
+
+// ===== DB Tables: businesses / services / queues / queue_members =====
+// These tables support business providers, services, and queue management.
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS businesses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    category TEXT,
+    address TEXT,
+    latitude REAL,
+    longitude REAL,
+    phone TEXT,
+    owner_user_id INTEGER,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (owner_user_id) REFERENCES users(id)
+  )
+`, (err) => {
+  if (err) console.error('Error creating businesses table:', err.message);
+  else     console.log('Businesses table ready');
+});
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS services (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id INTEGER NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    duration_minutes INTEGER DEFAULT 15,
+    price REAL DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+  )
+`, (err) => {
+  if (err) console.error('Error creating services table:', err.message);
+  else     console.log('Services table ready');
+});
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS queues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id INTEGER NOT NULL,
+    service_id INTEGER,
+    status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','paused','closed')),
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (business_id) REFERENCES businesses(id),
+    FOREIGN KEY (service_id)  REFERENCES services(id)
+  )
+`, (err) => {
+  if (err) console.error('Error creating queues table:', err.message);
+  else     console.log('Queues table ready');
+});
+
+db.run(`
+  CREATE TABLE IF NOT EXISTS queue_members (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    queue_id INTEGER NOT NULL,
+    user_id INTEGER NOT NULL,
+    ticket_number INTEGER NOT NULL,
+    status TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting','called','skipped','done','left')),
+    note TEXT,
+    joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(queue_id, ticket_number),
+    FOREIGN KEY (queue_id) REFERENCES queues(id),
+    FOREIGN KEY (user_id)  REFERENCES users(id)
+  )
+`, (err) => {
+  if (err) console.error('Error creating queue_members table:', err.message);
+  else     console.log('Queue Members table ready');
+});
+
+// ---- Small helpers to work with SQLite using Promises
+function runSQL(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) return reject(err);
+      resolve(this); // access to lastID / changes
+    });
+  });
+}
+function getSQL(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => err ? reject(err) : resolve(row));
+  });
+}
+function allSQL(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
+  });
+}
 
 // =============================================
 // STEP 5: API Routes (Endpoints)
@@ -74,7 +168,7 @@ db.run(`
 // Method: GET
 // ---------------------------------------------
 app.get('/', (req, res) => {
-    res.json({ message: 'Taboor Server is Running!' });
+  res.json({ message: 'Taboor Server is Running!' });
 });
 
 // ---------------------------------------------
@@ -84,45 +178,45 @@ app.get('/', (req, res) => {
 // Data needed: name, email, phone, password
 // ---------------------------------------------
 app.post('/register', async (req, res) => {
-    // Get data from the form
-    const { name, email, phone, password } = req.body;
-    
-    // Check if all fields are provided
-    if (!name || !email || !password) {
-        return res.status(400).json({ 
-            error: 'يرجى ملء جميع الحقول المطلوبة' 
-        });
-    }
-    
-    try {
-        // Encrypt the password for security
-        // Number 10 means how strong the encryption is
-        const hashedPassword = await bcrypt.hash(password, 10);
-        
-        // Insert new user into database
-        const query = `INSERT INTO users (name, email, phone, password) VALUES (?, ?, ?, ?)`;
-        
-        db.run(query, [name, email, phone, hashedPassword], function(err) {
-            if (err) {
-                // If email already exists, show error
-                if (err.message.includes('UNIQUE')) {
-                    return res.status(400).json({ 
-                        error: 'البريد الإلكتروني مستخدم بالفعل' 
-                    });
-                }
-                return res.status(500).json({ error: 'خطأ في التسجيل' });
-            }
-            
-            // Success! Return user ID
-            res.status(201).json({ 
-                message: 'تم إنشاء الحساب بنجاح',
-                userId: this.lastID 
-            });
-        });
-        
-    } catch (error) {
-        res.status(500).json({ error: 'خطأ في الخادم' });
-    }
+  // Get data from the form
+  const { name, email, phone, password } = req.body;
+
+  // Check if all fields are provided
+  if (!name || !email || !password) {
+    return res.status(400).json({
+      error: 'يرجى ملء جميع الحقول المطلوبة'
+    });
+  }
+
+  try {
+    // Encrypt the password for security
+    // Number 10 means how strong the encryption is
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Insert new user into database
+    const query = `INSERT INTO users (name, email, phone, password) VALUES (?, ?, ?, ?)`;
+
+    db.run(query, [name, email, phone, hashedPassword], function (err) {
+      if (err) {
+        // If email already exists, show error
+        if (err.message.includes('UNIQUE')) {
+          return res.status(400).json({
+            error: 'البريد الإلكتروني مستخدم بالفعل'
+          });
+        }
+        return res.status(500).json({ error: 'خطأ في التسجيل' });
+      }
+
+      // Success! Return user ID
+      res.status(201).json({
+        message: 'تم إنشاء الحساب بنجاح',
+        userId: this.lastID
+      });
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: 'خطأ في الخادم' });
+  }
 });
 
 // ---------------------------------------------
@@ -132,51 +226,51 @@ app.post('/register', async (req, res) => {
 // Data needed: email, password
 // ---------------------------------------------
 app.post('/login', (req, res) => {
-    // Get email and password from form
-    const { email, password } = req.body;
-    
-    // Check if both fields are provided
-    if (!email || !password) {
-        return res.status(400).json({ 
-            error: 'يرجى إدخال البريد الإلكتروني وكلمة المرور' 
-        });
-    }
-    
-    // Find user in database by email
-    const query = `SELECT * FROM users WHERE email = ?`;
-    
-    db.get(query, [email], async (err, user) => {
-        if (err) {
-            return res.status(500).json({ error: 'خطأ في الخادم' });
-        }
-        
-        // If user not found
-        if (!user) {
-            return res.status(401).json({ 
-                error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' 
-            });
-        }
-        
-        // Check if password matches
-        const passwordMatch = await bcrypt.compare(password, user.password);
-        
-        if (!passwordMatch) {
-            return res.status(401).json({ 
-                error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' 
-            });
-        }
-        
-        // Success! Login approved
-        res.json({ 
-            message: 'تم تسجيل الدخول بنجاح',
-            user: {
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                phone: user.phone
-            }
-        });
+  // Get email and password from form
+  const { email, password } = req.body;
+
+  // Check if both fields are provided
+  if (!email || !password) {
+    return res.status(400).json({
+      error: 'يرجى إدخال البريد الإلكتروني وكلمة المرور'
     });
+  }
+
+  // Find user in database by email
+  const query = `SELECT * FROM users WHERE email = ?`;
+
+  db.get(query, [email], async (err, user) => {
+    if (err) {
+      return res.status(500).json({ error: 'خطأ في الخادم' });
+    }
+
+    // If user not found
+    if (!user) {
+      return res.status(401).json({
+        error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة'
+      });
+    }
+
+    // Check if password matches
+    const passwordMatch = await bcrypt.compare(password, user.password);
+
+    if (!passwordMatch) {
+      return res.status(401).json({
+        error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة'
+      });
+    }
+
+    // Success! Login approved
+    res.json({
+      message: 'تم تسجيل الدخول بنجاح',
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone
+      }
+    });
+  });
 });
 
 // ---------------------------------------------
@@ -185,14 +279,317 @@ app.post('/login', (req, res) => {
 // Method: GET
 // ---------------------------------------------
 app.get('/users', (req, res) => {
-    const query = `SELECT id, name, email, phone, created_at FROM users`;
-    
-    db.all(query, [], (err, rows) => {
-        if (err) {
-            return res.status(500).json({ error: 'خطأ في الخادم' });
-        }
-        res.json({ users: rows });
+  const query = `SELECT id, name, email, phone, created_at FROM users`;
+
+  db.all(query, [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: 'خطأ في الخادم' });
+    }
+    res.json({ users: rows });
+  });
+});
+
+// ====================================================================
+// Business / Service / Queue Management Endpoints
+// ====================================================================
+
+// ---------- Businesses ----------
+
+// Create/Register a business
+// POST /business/register
+// Body: { name, category, address, latitude, longitude, phone, owner_user_id }
+app.post('/business/register', async (req, res) => {
+  const { name, category, address, latitude, longitude, phone, owner_user_id } = req.body;
+  if (!name) return res.status(400).json({ error: 'Business name is required' });
+
+  try {
+    const sql = `
+      INSERT INTO businesses (name, category, address, latitude, longitude, phone, owner_user_id)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `;
+    const result = await runSQL(sql, [name, category, address, latitude, longitude, phone, owner_user_id || null]);
+    const business = await getSQL(`SELECT * FROM businesses WHERE id = ?`, [result.lastID]);
+    res.status(201).json({ message: 'Business created', business });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create business' });
+  }
+});
+
+// List all active businesses
+// GET /businesses
+app.get('/businesses', async (_req, res) => {
+  try {
+    const rows = await allSQL(`SELECT * FROM businesses WHERE is_active = 1 ORDER BY created_at DESC`);
+    res.json({ businesses: rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch businesses' });
+  }
+});
+
+// ---------- Services ----------
+
+// Create a service for a business
+// POST /services
+// Body: { business_id, name, description, duration_minutes, price }
+app.post('/services', async (req, res) => {
+  const { business_id, name, description, duration_minutes, price } = req.body;
+  if (!business_id || !name) {
+    return res.status(400).json({ error: 'business_id and name are required' });
+  }
+  try {
+    const sql = `
+      INSERT INTO services (business_id, name, description, duration_minutes, price)
+      VALUES (?, ?, ?, ?, ?)
+    `;
+    const result = await runSQL(sql, [business_id, name, description, duration_minutes || 15, price || 0]);
+    const service = await getSQL(`SELECT * FROM services WHERE id = ?`, [result.lastID]);
+    res.status(201).json({ message: 'Service created', service });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create service' });
+  }
+});
+
+// List services for a business
+// GET /businesses/:businessId/services
+app.get('/businesses/:businessId/services', async (req, res) => {
+  const { businessId } = req.params;
+  try {
+    const rows = await allSQL(
+      `SELECT * FROM services WHERE business_id = ? AND is_active = 1 ORDER BY id DESC`,
+      [businessId]
+    );
+    res.json({ services: rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch services' });
+  }
+});
+
+// ---------- Queues ----------
+
+// Create a queue (for a business and optional service)
+// POST /queues
+// Body: { business_id, service_id }
+app.post('/queues', async (req, res) => {
+  const { business_id, service_id } = req.body;
+  if (!business_id) return res.status(400).json({ error: 'business_id is required' });
+  try {
+    const sql = `
+      INSERT INTO queues (business_id, service_id, status)
+      VALUES (?, ?, 'open')
+    `;
+    const result = await runSQL(sql, [business_id, service_id || null]);
+    const queue = await getSQL(`SELECT * FROM queues WHERE id = ?`, [result.lastID]);
+    res.status(201).json({ message: 'Queue created', queue });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to create queue' });
+  }
+});
+
+// List queues for a business
+// GET /businesses/:businessId/queues
+app.get('/businesses/:businessId/queues', async (req, res) => {
+  const { businessId } = req.params;
+  try {
+    const rows = await allSQL(`
+      SELECT q.*, s.name AS service_name
+      FROM queues q
+      LEFT JOIN services s ON s.id = q.service_id
+      WHERE q.business_id = ?
+      ORDER BY q.updated_at DESC
+    `, [businessId]);
+    res.json({ queues: rows });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch queues' });
+  }
+});
+
+// Update queue status (open/paused/closed)
+// PATCH /queues/:queueId/status
+// Body: { status }
+app.patch('/queues/:queueId/status', async (req, res) => {
+  const { queueId } = req.params;
+  const { status } = req.body;
+  if (!['open', 'paused', 'closed'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status. Use open|paused|closed' });
+  }
+  try {
+    await runSQL(`UPDATE queues SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [status, queueId]);
+    const queue = await getSQL(`SELECT * FROM queues WHERE id = ?`, [queueId]);
+    res.json({ message: 'Queue status updated', queue });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+// ---------- Queue Members (Join / Position / Leave) ----------
+
+// Helper: get next ticket number within a queue (max + 1)
+async function getNextTicketNumber(queue_id) {
+  const row = await getSQL(`SELECT MAX(ticket_number) AS max_no FROM queue_members WHERE queue_id = ?`, [queue_id]);
+  return (row && row.max_no ? row.max_no : 0) + 1;
+}
+
+// Join a queue
+// POST /queues/:queueId/join
+// Body: { user_id, note }
+app.post('/queues/:queueId/join', async (req, res) => {
+  const { queueId } = req.params;
+  const { user_id, note } = req.body;
+  if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+
+  try {
+    const queue = await getSQL(`SELECT * FROM queues WHERE id = ?`, [queueId]);
+    if (!queue) return res.status(404).json({ error: 'Queue not found' });
+    if (queue.status !== 'open') return res.status(400).json({ error: 'Queue is not open' });
+
+    const ticket = await getNextTicketNumber(queueId);
+
+    const insert = await runSQL(
+      `INSERT INTO queue_members (queue_id, user_id, ticket_number, note) VALUES (?, ?, ?, ?)`,
+      [queueId, user_id, ticket, note || null]
+    );
+
+    const member = await getSQL(`SELECT * FROM queue_members WHERE id = ?`, [insert.lastID]);
+
+    const aheadRow = await getSQL(
+      `SELECT COUNT(*) AS ahead
+       FROM queue_members
+       WHERE queue_id = ? AND status = 'waiting' AND id < ?`,
+      [queueId, member.id]
+    );
+
+    res.status(201).json({
+      message: 'Joined queue successfully',
+      ticket_number: ticket,
+      position: (aheadRow ? aheadRow.ahead : 0) + 1
     });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to join queue' });
+  }
+});
+
+// Get current position in queue for a user
+// GET /queues/:queueId/position?user_id=123
+app.get('/queues/:queueId/position', async (req, res) => {
+  const { queueId } = req.params;
+  const { user_id } = req.query;
+  if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+
+  try {
+    const me = await getSQL(
+      `SELECT * FROM queue_members
+       WHERE queue_id = ? AND user_id = ? AND status = 'waiting'
+       ORDER BY id DESC LIMIT 1`,
+      [queueId, user_id]
+    );
+
+    if (!me) return res.status(404).json({ error: 'No active ticket for this user in this queue' });
+
+    const aheadRow = await getSQL(
+      `SELECT COUNT(*) AS ahead
+       FROM queue_members
+       WHERE queue_id = ? AND status = 'waiting' AND id < ?`,
+      [queueId, me.id]
+    );
+
+    res.json({
+      ticket_number: me.ticket_number,
+      status: me.status,
+      position: (aheadRow ? aheadRow.ahead : 0) + 1
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get position' });
+  }
+});
+
+// Leave queue (mark as "left")
+// POST /queues/:queueId/leave
+// Body: { user_id }
+app.post('/queues/:queueId/leave', async (req, res) => {
+  const { queueId } = req.params;
+  const { user_id } = req.body;
+  if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+
+  try {
+    const row = await getSQL(
+      `SELECT * FROM queue_members
+       WHERE queue_id = ? AND user_id = ? AND status = 'waiting'
+       ORDER BY id DESC LIMIT 1`,
+      [queueId, user_id]
+    );
+
+    if (!row) return res.status(404).json({ error: 'No active ticket to leave' });
+
+    await runSQL(`UPDATE queue_members SET status = 'left', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [row.id]);
+
+    res.json({ message: 'Left the queue successfully' });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to leave queue' });
+  }
+});
+
+// (Optional) Call next customer: move earliest waiting to "called"
+// POST /queues/:queueId/next
+app.post('/queues/:queueId/next', async (req, res) => {
+  const { queueId } = req.params;
+  try {
+    const next = await getSQL(
+      `SELECT * FROM queue_members
+       WHERE queue_id = ? AND status = 'waiting'
+       ORDER BY id ASC LIMIT 1`,
+      [queueId]
+    );
+
+    if (!next) return res.json({ message: 'No one is waiting' });
+
+    await runSQL(`UPDATE queue_members SET status = 'called', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [next.id]);
+
+    res.json({
+      message: 'Next customer called',
+      ticket_number: next.ticket_number,
+      user_id: next.user_id
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to call next' });
+  }
+});
+
+// Simple queue overview for dashboard (stats + ETA)
+// GET /queues/:queueId/overview
+app.get('/queues/:queueId/overview', async (req, res) => {
+  const { queueId } = req.params;
+  try {
+    const queue = await getSQL(
+      `SELECT q.*, b.name AS business_name, s.name AS service_name
+       FROM queues q
+       JOIN businesses b ON b.id = q.business_id
+       LEFT JOIN services s ON s.id = q.service_id
+       WHERE q.id = ?`,
+      [queueId]
+    );
+    if (!queue) return res.status(404).json({ error: 'Queue not found' });
+
+    const stats = await getSQL(
+      `SELECT
+         SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END) AS waiting,
+         SUM(CASE WHEN status='called'  THEN 1 ELSE 0 END) AS called,
+         SUM(CASE WHEN status='done'    THEN 1 ELSE 0 END) AS done,
+         SUM(CASE WHEN status='skipped' THEN 1 ELSE 0 END) AS skipped,
+         SUM(CASE WHEN status='left'    THEN 1 ELSE 0 END) AS left
+       FROM queue_members WHERE queue_id = ?`,
+      [queueId]
+    );
+
+    const baseMinutes = queue.service_id
+      ? (await getSQL(`SELECT duration_minutes FROM services WHERE id = ?`, [queue.service_id]))?.duration_minutes || 10
+      : 10;
+
+    const etaMinutes = (stats?.waiting || 0) * baseMinutes;
+
+    res.json({ queue, stats, estimated_wait_minutes: etaMinutes });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to get overview' });
+  }
 });
 
 // =============================================
@@ -200,10 +597,10 @@ app.get('/users', (req, res) => {
 // =============================================
 // Make the server start listening for requests
 app.listen(PORT, () => {
-    console.log('=================================');
-    console.log(`Taboor Server is running!`);
-    console.log(`URL: http://localhost:${PORT}`);
-    console.log('=================================');
+  console.log('=================================');
+  console.log(`Taboor Server is running!`);
+  console.log(`URL: http://localhost:${PORT}`);
+  console.log('=================================');
 });
 
 // =============================================
@@ -211,11 +608,11 @@ app.listen(PORT, () => {
 // =============================================
 // Close database connection when server stops
 process.on('SIGINT', () => {
-    db.close((err) => {
-        if (err) {
-            console.error(err.message);
-        }
-        console.log('Database connection closed');
-        process.exit(0);
-    });
+  db.close((err) => {
+    if (err) {
+      console.error(err.message);
+    }
+    console.log('Database connection closed');
+    process.exit(0);
+  });
 });
