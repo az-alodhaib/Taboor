@@ -3,7 +3,7 @@
 // =============================================
 // Think of these as tools we need to build our server
 
-const express = require('express');            // Web framework
+const express = require('express');            // Framework to build web server
 const sqlite3 = require('sqlite3').verbose();  // Database to store user data
 const bcrypt = require('bcrypt');              // Tool to encrypt passwords
 const cors = require('cors');                  // Allow frontend to talk to backend
@@ -63,20 +63,22 @@ db.run(`
   }
 });
 
-// ===== DB Tables: businesses / services / queues / queue_members =====
-// These tables support business providers, services, and queue management.
+
+// STEP DATABASE
+// ===== New DB tables: businesses / services / queues / queue_members =====
+// Simple schema for providers, their services, queues, and queue members.
 
 db.run(`
   CREATE TABLE IF NOT EXISTS businesses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    category TEXT,
+    name TEXT NOT NULL,           -- provider name
+    category TEXT,                -- e.g. Barber, Car Wash
     address TEXT,
     latitude REAL,
     longitude REAL,
     phone TEXT,
-    owner_user_id INTEGER,
-    is_active INTEGER DEFAULT 1,
+    owner_user_id INTEGER,        -- optional link to users.id
+    is_active INTEGER DEFAULT 1,  -- 1 active, 0 inactive
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (owner_user_id) REFERENCES users(id)
   )
@@ -85,13 +87,14 @@ db.run(`
   else     console.log('Businesses table ready');
 });
 
+// STEP DATABASE
 db.run(`
   CREATE TABLE IF NOT EXISTS services (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    business_id INTEGER NOT NULL,
+    business_id INTEGER NOT NULL, -- service belongs to a business
     name TEXT NOT NULL,
     description TEXT,
-    duration_minutes INTEGER DEFAULT 15,
+    duration_minutes INTEGER DEFAULT 15, -- average time per service
     price REAL DEFAULT 0,
     is_active INTEGER DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -102,11 +105,12 @@ db.run(`
   else     console.log('Services table ready');
 });
 
+// STEP DATABASE
 db.run(`
   CREATE TABLE IF NOT EXISTS queues (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    business_id INTEGER NOT NULL,
-    service_id INTEGER,
+    business_id INTEGER NOT NULL, -- queue for a business
+    service_id INTEGER,           -- optional: queue for a specific service
     status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','paused','closed')),
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -118,12 +122,13 @@ db.run(`
   else     console.log('Queues table ready');
 });
 
+// STEP DATABASE
 db.run(`
   CREATE TABLE IF NOT EXISTS queue_members (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    queue_id INTEGER NOT NULL,
-    user_id INTEGER NOT NULL,
-    ticket_number INTEGER NOT NULL,
+    queue_id INTEGER NOT NULL,    -- which queue
+    user_id INTEGER NOT NULL,     -- who joined
+    ticket_number INTEGER NOT NULL, -- unique number per queue
     status TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting','called','skipped','done','left')),
     note TEXT,
     joined_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -137,25 +142,33 @@ db.run(`
   else     console.log('Queue Members table ready');
 });
 
-// ---- Small helpers to work with SQLite using Promises
+
+// STEP DATABASE
+// ---- Small DB helpers (Promise wrappers)
+// Use these to run SQL with .then/await and get lastID/rows easily.
 function runSQL(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.run(sql, params, function (err) {
       if (err) return reject(err);
-      resolve(this); // access to lastID / changes
+      resolve(this); // this.lastID, this.changes
     });
   });
 }
+
+// STEP DATABASE
 function getSQL(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.get(sql, params, (err, row) => err ? reject(err) : resolve(row));
   });
 }
+
+// STEP DATABASE
 function allSQL(sql, params = []) {
   return new Promise((resolve, reject) => {
     db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
   });
 }
+
 
 // =============================================
 // STEP 5: API Routes (Endpoints)
@@ -289,106 +302,107 @@ app.get('/users', (req, res) => {
   });
 });
 
+
 // ====================================================================
-// Business / Service / Queue Management Endpoints
+// Business / Service / Queue Management (new endpoints)
 // ====================================================================
 
+// STEP DATABASE
 // ---------- Businesses ----------
 
-// Create/Register a business
 // POST /business/register
-// Body: { name, category, address, latitude, longitude, phone, owner_user_id }
+// Create a new business (provider). Required: name.
 app.post('/business/register', async (req, res) => {
   const { name, category, address, latitude, longitude, phone, owner_user_id } = req.body;
   if (!name) return res.status(400).json({ error: 'Business name is required' });
 
   try {
-    const sql = `
-      INSERT INTO businesses (name, category, address, latitude, longitude, phone, owner_user_id)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `;
-    const result = await runSQL(sql, [name, category, address, latitude, longitude, phone, owner_user_id || null]);
+    const result = await runSQL(
+      `INSERT INTO businesses (name, category, address, latitude, longitude, phone, owner_user_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [name, category, address, latitude, longitude, phone, owner_user_id || null]
+    );
     const business = await getSQL(`SELECT * FROM businesses WHERE id = ?`, [result.lastID]);
     res.status(201).json({ message: 'Business created', business });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to create business' });
   }
 });
 
-// List all active businesses
+// STEP DATABASE
 // GET /businesses
+// List active businesses.
 app.get('/businesses', async (_req, res) => {
   try {
     const rows = await allSQL(`SELECT * FROM businesses WHERE is_active = 1 ORDER BY created_at DESC`);
     res.json({ businesses: rows });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to fetch businesses' });
   }
 });
 
+// STEP DATABASE
 // ---------- Services ----------
 
-// Create a service for a business
 // POST /services
-// Body: { business_id, name, description, duration_minutes, price }
+// Add a service to a business. Required: business_id, name.
 app.post('/services', async (req, res) => {
   const { business_id, name, description, duration_minutes, price } = req.body;
-  if (!business_id || !name) {
-    return res.status(400).json({ error: 'business_id and name are required' });
-  }
+  if (!business_id || !name) return res.status(400).json({ error: 'business_id and name are required' });
+
   try {
-    const sql = `
-      INSERT INTO services (business_id, name, description, duration_minutes, price)
-      VALUES (?, ?, ?, ?, ?)
-    `;
-    const result = await runSQL(sql, [business_id, name, description, duration_minutes || 15, price || 0]);
+    const result = await runSQL(
+      `INSERT INTO services (business_id, name, description, duration_minutes, price)
+       VALUES (?, ?, ?, ?, ?)`,
+      [business_id, name, description, duration_minutes || 15, price || 0]
+    );
     const service = await getSQL(`SELECT * FROM services WHERE id = ?`, [result.lastID]);
     res.status(201).json({ message: 'Service created', service });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to create service' });
   }
 });
 
-// List services for a business
+// STEP DATABASE
 // GET /businesses/:businessId/services
+// List services for one business.
 app.get('/businesses/:businessId/services', async (req, res) => {
-  const { businessId } = req.params;
   try {
     const rows = await allSQL(
       `SELECT * FROM services WHERE business_id = ? AND is_active = 1 ORDER BY id DESC`,
-      [businessId]
+      [req.params.businessId]
     );
     res.json({ services: rows });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to fetch services' });
   }
 });
 
+// STEP DATABASE
 // ---------- Queues ----------
 
-// Create a queue (for a business and optional service)
 // POST /queues
-// Body: { business_id, service_id }
+// Create a queue (for a business, optional service_id).
 app.post('/queues', async (req, res) => {
   const { business_id, service_id } = req.body;
   if (!business_id) return res.status(400).json({ error: 'business_id is required' });
+
   try {
-    const sql = `
-      INSERT INTO queues (business_id, service_id, status)
-      VALUES (?, ?, 'open')
-    `;
-    const result = await runSQL(sql, [business_id, service_id || null]);
+    const result = await runSQL(
+      `INSERT INTO queues (business_id, service_id, status) VALUES (?, ?, 'open')`,
+      [business_id, service_id || null]
+    );
     const queue = await getSQL(`SELECT * FROM queues WHERE id = ?`, [result.lastID]);
     res.status(201).json({ message: 'Queue created', queue });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to create queue' });
   }
 });
 
-// List queues for a business
+// STEP DATABASE
 // GET /businesses/:businessId/queues
+// List queues of one business (with service name if set).
 app.get('/businesses/:businessId/queues', async (req, res) => {
-  const { businessId } = req.params;
   try {
     const rows = await allSQL(`
       SELECT q.*, s.name AS service_name
@@ -396,45 +410,45 @@ app.get('/businesses/:businessId/queues', async (req, res) => {
       LEFT JOIN services s ON s.id = q.service_id
       WHERE q.business_id = ?
       ORDER BY q.updated_at DESC
-    `, [businessId]);
+    `, [req.params.businessId]);
     res.json({ queues: rows });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to fetch queues' });
   }
 });
 
-// Update queue status (open/paused/closed)
+// STEP DATABASE
 // PATCH /queues/:queueId/status
-// Body: { status }
+// Update queue status. Allowed: open | paused | closed.
 app.patch('/queues/:queueId/status', async (req, res) => {
-  const { queueId } = req.params;
   const { status } = req.body;
-  if (!['open', 'paused', 'closed'].includes(status)) {
+  if (!['open','paused','closed'].includes(status))
     return res.status(400).json({ error: 'Invalid status. Use open|paused|closed' });
-  }
+
   try {
-    await runSQL(`UPDATE queues SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [status, queueId]);
-    const queue = await getSQL(`SELECT * FROM queues WHERE id = ?`, [queueId]);
+    await runSQL(`UPDATE queues SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [status, req.params.queueId]);
+    const queue = await getSQL(`SELECT * FROM queues WHERE id = ?`, [req.params.queueId]);
     res.json({ message: 'Queue status updated', queue });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to update status' });
   }
 });
 
-// ---------- Queue Members (Join / Position / Leave) ----------
+// STEP DATABASE
+// ---------- Queue Members ----------
 
-// Helper: get next ticket number within a queue (max + 1)
+// Helper: get next ticket number inside this queue
 async function getNextTicketNumber(queue_id) {
   const row = await getSQL(`SELECT MAX(ticket_number) AS max_no FROM queue_members WHERE queue_id = ?`, [queue_id]);
   return (row && row.max_no ? row.max_no : 0) + 1;
 }
 
-// Join a queue
+// STEP DATABASE
 // POST /queues/:queueId/join
-// Body: { user_id, note }
+// Join queue. Required: user_id. Returns ticket_number + position.
 app.post('/queues/:queueId/join', async (req, res) => {
-  const { queueId } = req.params;
   const { user_id, note } = req.body;
+  const queueId = req.params.queueId;
   if (!user_id) return res.status(400).json({ error: 'user_id is required' });
 
   try {
@@ -443,36 +457,35 @@ app.post('/queues/:queueId/join', async (req, res) => {
     if (queue.status !== 'open') return res.status(400).json({ error: 'Queue is not open' });
 
     const ticket = await getNextTicketNumber(queueId);
-
-    const insert = await runSQL(
+    const ins = await runSQL(
       `INSERT INTO queue_members (queue_id, user_id, ticket_number, note) VALUES (?, ?, ?, ?)`,
       [queueId, user_id, ticket, note || null]
     );
+    const me = await getSQL(`SELECT * FROM queue_members WHERE id = ?`, [ins.lastID]);
 
-    const member = await getSQL(`SELECT * FROM queue_members WHERE id = ?`, [insert.lastID]);
-
-    const aheadRow = await getSQL(
+    const ahead = await getSQL(
       `SELECT COUNT(*) AS ahead
        FROM queue_members
        WHERE queue_id = ? AND status = 'waiting' AND id < ?`,
-      [queueId, member.id]
+      [queueId, me.id]
     );
 
     res.status(201).json({
       message: 'Joined queue successfully',
       ticket_number: ticket,
-      position: (aheadRow ? aheadRow.ahead : 0) + 1
+      position: (ahead ? ahead.ahead : 0) + 1
     });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to join queue' });
   }
 });
 
-// Get current position in queue for a user
+// STEP DATABASE
 // GET /queues/:queueId/position?user_id=123
+// Get my position in queue (latest waiting ticket for this user).
 app.get('/queues/:queueId/position', async (req, res) => {
-  const { queueId } = req.params;
   const { user_id } = req.query;
+  const queueId = req.params.queueId;
   if (!user_id) return res.status(400).json({ error: 'user_id is required' });
 
   try {
@@ -482,10 +495,9 @@ app.get('/queues/:queueId/position', async (req, res) => {
        ORDER BY id DESC LIMIT 1`,
       [queueId, user_id]
     );
-
     if (!me) return res.status(404).json({ error: 'No active ticket for this user in this queue' });
 
-    const aheadRow = await getSQL(
+    const ahead = await getSQL(
       `SELECT COUNT(*) AS ahead
        FROM queue_members
        WHERE queue_id = ? AND status = 'waiting' AND id < ?`,
@@ -495,19 +507,19 @@ app.get('/queues/:queueId/position', async (req, res) => {
     res.json({
       ticket_number: me.ticket_number,
       status: me.status,
-      position: (aheadRow ? aheadRow.ahead : 0) + 1
+      position: (ahead ? ahead.ahead : 0) + 1
     });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to get position' });
   }
 });
 
-// Leave queue (mark as "left")
+// STEP DATABASE
 // POST /queues/:queueId/leave
-// Body: { user_id }
+// Leave queue: mark latest waiting ticket as 'left'.
 app.post('/queues/:queueId/leave', async (req, res) => {
-  const { queueId } = req.params;
   const { user_id } = req.body;
+  const queueId = req.params.queueId;
   if (!user_id) return res.status(400).json({ error: 'user_id is required' });
 
   try {
@@ -517,47 +529,38 @@ app.post('/queues/:queueId/leave', async (req, res) => {
        ORDER BY id DESC LIMIT 1`,
       [queueId, user_id]
     );
-
     if (!row) return res.status(404).json({ error: 'No active ticket to leave' });
 
     await runSQL(`UPDATE queue_members SET status = 'left', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [row.id]);
-
     res.json({ message: 'Left the queue successfully' });
-  } catch (err) {
+  } catch {
     res.status(500).json({ error: 'Failed to leave queue' });
   }
 });
 
-// (Optional) Call next customer: move earliest waiting to "called"
+// STEP DATABASE
 // POST /queues/:queueId/next
+// Dashboard helper: call next waiting -> 'called'.
 app.post('/queues/:queueId/next', async (req, res) => {
-  const { queueId } = req.params;
   try {
     const next = await getSQL(
-      `SELECT * FROM queue_members
-       WHERE queue_id = ? AND status = 'waiting'
-       ORDER BY id ASC LIMIT 1`,
-      [queueId]
+      `SELECT * FROM queue_members WHERE queue_id = ? AND status = 'waiting' ORDER BY id ASC LIMIT 1`,
+      [req.params.queueId]
     );
-
     if (!next) return res.json({ message: 'No one is waiting' });
 
     await runSQL(`UPDATE queue_members SET status = 'called', updated_at = CURRENT_TIMESTAMP WHERE id = ?`, [next.id]);
-
-    res.json({
-      message: 'Next customer called',
-      ticket_number: next.ticket_number,
-      user_id: next.user_id
-    });
-  } catch (err) {
+    res.json({ message: 'Next customer called', ticket_number: next.ticket_number, user_id: next.user_id });
+  } catch {
     res.status(500).json({ error: 'Failed to call next' });
   }
 });
 
-// Simple queue overview for dashboard (stats + ETA)
+// STEP DATABASE
 // GET /queues/:queueId/overview
+// Simple dashboard summary: queue info + counts + ETA.
 app.get('/queues/:queueId/overview', async (req, res) => {
-  const { queueId } = req.params;
+  const queueId = req.params.queueId;
   try {
     const queue = await getSQL(
       `SELECT q.*, b.name AS business_name, s.name AS service_name
@@ -580,17 +583,21 @@ app.get('/queues/:queueId/overview', async (req, res) => {
       [queueId]
     );
 
+    // ETA: waiting count * service duration (or 10 if no service)
     const baseMinutes = queue.service_id
       ? (await getSQL(`SELECT duration_minutes FROM services WHERE id = ?`, [queue.service_id]))?.duration_minutes || 10
       : 10;
 
-    const etaMinutes = (stats?.waiting || 0) * baseMinutes;
-
-    res.json({ queue, stats, estimated_wait_minutes: etaMinutes });
-  } catch (err) {
+    res.json({
+      queue,
+      stats,
+      estimated_wait_minutes: (stats?.waiting || 0) * baseMinutes
+    });
+  } catch {
     res.status(500).json({ error: 'Failed to get overview' });
   }
 });
+
 
 // =============================================
 // STEP 6: Start the Server
