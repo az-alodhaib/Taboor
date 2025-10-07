@@ -1,0 +1,28 @@
+{
+  "name": "taboor",
+  "version": "1.0.0",
+  "description": "taboor-app ->\r ------------------------------------\r 1- frontend ->\r │   ├── index.html\r │   ├── css/\r │   ├── js/\r │   └── assets/\r -----------------------------------\r 2- backend ->\r │   ├── server.js\r │   ├── routes/\r │   ├── models/\r │   └── utils/\r -----------------------------------\r 3-  database ->\r  │   └── taboor.db\r -----------------------------------\r about sever.js file:-\r from line 3-7 => \r // STEP 1: Import Required Packages\r // Think of these as tools we need to build our server\r from line 13-16 =>\r // STEP 2: Create the Application\r from line 21-27 => \r // STEP 3: Setup Middleware\r // Middleware = tools that process requests before they reach our code\r from line 33-58 =>\r // STEP 4: Setup Database\r from 61-187 =>\r // =============================================\r // STEP 5: API Routes (Endpoints)\r // =============================================\r // Routes = URLs that frontend can call to do actions\r from line 191-196 =>\r // =============================================\r // STEP 6: Start the Server\r // =============================================\r from line 200-208 =>\r // =============================================\r // STEP 7: Handle Server Shutdown\r // =============================================",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/az-alodhaib/Taboor.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/az-alodhaib/Taboor/issues"
+  },
+  "homepage": "https://github.com/az-alodhaib/Taboor#readme",
+  "dependencies": {
+    "bcrypt": "^6.0.0",
+    "body-parser": "^2.2.0",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "sqlite3": "^5.1.7"
+  }
+}
