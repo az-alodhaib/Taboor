@@ -1,0 +1,66 @@
+name: Full Stack CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test-python:
+    name: Test Python & ML
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+        
+    - name: Install Python dependencies
+      run: |
+        pip install pytest pandas numpy scikit-learn
+        
+    - name: Run Python tests
+      run: |
+        python -m pytest backend/tests/ -v
+
+  test-javascript:
+    name: Test JavaScript
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        
+    - name: Validate JavaScript syntax
+      run: |
+        if [ -f "frontend/Main.js" ]; then
+          node -c frontend/Main.js && echo "✅ Main.js syntax valid"
+        fi
+        if [ -f "backend/server.js" ]; then
+          node -c backend/server.js && echo "✅ server.js syntax valid"
+        fi
+
+  check-project:
+    name: Check Project Structure
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Verify critical files
+      run: |
+        echo "=== PROJECT CHECK ==="
+        [ -f "frontend/index.html" ] && echo "✅ index.html exists"
+        [ -f "backend/queue-data.csv" ] && echo "✅ queue-data.csv exists"
+        [ -f "database/schema.sql" ] && echo "✅ schema.sql exists"
