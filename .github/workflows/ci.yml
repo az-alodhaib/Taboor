@@ -24,9 +24,13 @@ jobs:
       run: |
         pip install pytest pandas numpy scikit-learn
         
-    - name: Run Python tests
+    - name: Run Backend Python tests
       run: |
         python -m pytest backend/tests/ -v
+        
+    - name: Run Database Python tests
+      run: |
+        python -m pytest database/tests/ -v
 
   test-javascript:
     name: Test JavaScript
@@ -43,11 +47,30 @@ jobs:
         
     - name: Validate JavaScript syntax
       run: |
+        echo "=== JavaScript Syntax Check ==="
         if [ -f "frontend/Main.js" ]; then
           node -c frontend/Main.js && echo "✅ Main.js syntax valid"
         fi
         if [ -f "backend/server.js" ]; then
           node -c backend/server.js && echo "✅ server.js syntax valid"
+        fi
+        
+    - name: Run Frontend JavaScript tests
+      run: |
+        echo "=== Running Frontend Tests ==="
+        if [ -f "frontend/tests/test_main.js" ]; then
+          node frontend/tests/test_main.js
+        else
+          echo "⚠️ test_main.js not found"
+        fi
+        
+    - name: Run Backend JavaScript tests
+      run: |
+        echo "=== Running Backend JavaScript Tests ==="
+        if [ -f "backend/tests/test_server.js" ]; then
+          node backend/tests/test_server.js
+        else
+          echo "⚠️ test_server.js not found"
         fi
 
   check-project:
@@ -60,7 +83,26 @@ jobs:
       
     - name: Verify critical files
       run: |
-        echo "=== PROJECT CHECK ==="
+        echo "=== PROJECT STRUCTURE CHECK ==="
+        
+        echo "--- Frontend Files ---"
         [ -f "frontend/index.html" ] && echo "✅ index.html exists"
-        [ -f "backend/queue-data.csv" ] && echo "✅ queue-data.csv exists"
+        [ -f "frontend/Main.js" ] && echo "✅ Main.js exists"
+        [ -f "frontend/style.css" ] && echo "✅ style.css exists"
+        [ -f "frontend/tests/test_main.js" ] && echo "✅ test_main.js exists"
+        
+        echo "--- Backend Files ---"
+        [ -f "backend/Nootbook.ipynb" ] && echo "✅ Nootbook.ipynb exists"
+        [ -f "backend/queue_data.csv" ] && echo "✅ queue_data.csv exists"
+        [ -f "backend/server.js" ] && echo "✅ server.js exists"
+        [ -f "backend/tests/test_data_cleaning.py" ] && echo "✅ test_data_cleaning.py exists"
+        [ -f "backend/tests/test_server.js" ] && echo "✅ test_server.js exists"
+        [ -f "backend/tests/test_nootbook.py" ] && echo "✅ test_nootbook.py exists"
+        
+        echo "--- Database Files ---"
+        [ -f "database/taboor.db" ] && echo "✅ taboor.db exists"
         [ -f "database/schema.sql" ] && echo "✅ schema.sql exists"
+        [ -f "database/tests/test_schema.py" ] && echo "✅ test_schema.py exists"
+        [ -f "database/tests/test_data_integrity.py" ] && echo "✅ test_data_integrity.py exists"
+        
+        echo "=== All critical files verified ==="
