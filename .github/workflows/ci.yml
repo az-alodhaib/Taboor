@@ -82,6 +82,36 @@ jobs:
         
         echo "📋 Project structure validation completed!"
 
+    - name: Execute Python tests
+      run: |
+        echo "=== Python Test Execution ==="
+        echo "🧪 Running Python unit tests..."
+        
+        # Install pytest if not already installed
+        pip install pytest
+        
+        # Check if any test files exist and run them
+        if find . -name "test_*.py" | grep -q "."; then
+          echo "📁 Found Python test files. Running tests..."
+          python -m pytest -v
+        else
+          echo "ℹ️  No Python test files found to execute"
+        fi
+
+    - name: Execute JavaScript tests
+      run: |
+        echo "=== JavaScript Test Execution ==="
+        echo "🧪 Running JavaScript unit tests..."
+        
+        # Check if any test files exist and run them
+        if find . -name "test_*.js" | grep -q "."; then
+          echo "📁 Found JavaScript test files. Running tests..."
+          # Run each JavaScript test file
+          find . -name "test_*.js" -exec node {} \;
+        else
+          echo "ℹ️  No JavaScript test files found to execute"
+        fi
+
     - name: Start CI process
       run: |
         echo "CI Pipeline Started"
