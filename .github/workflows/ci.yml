@@ -2,7 +2,7 @@ name: Taboor
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]  
 
 jobs: 
   ci-pipeline:
@@ -11,7 +11,26 @@ jobs:
 
     steps:
     - name: checkout code
-      uses: actions/checkout@v4    
+      uses: actions/checkout@v4  
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Check Python syntax
+      run: |
+        echo "=== Python Syntax Validation ==="
+        echo "🔍 Checking Python files for syntax errors..."
+        
+        # Check if any Python files exist
+        if find . -name "*.py" | grep -q "."; then
+          echo "Found Python files. Checking syntax..."
+          # Check each Python file for syntax errors
+          find . -name "*.py" -exec python -m py_compile {} \; && echo "✅ All Python files have valid syntax!"
+        else
+          echo "No Python files found to check"
+        fi        
 
     - name: Start CI process
       run: |
