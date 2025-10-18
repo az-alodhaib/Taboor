@@ -1,0 +1,20 @@
+name: Taboor
+
+on:
+  push:
+    branches: [main]
+
+jobs: 
+  ci-pipeline:
+    name: CI pipeline
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: checkout code
+      uses: actions/checkout@v4    
+
+    - name: Start CI process
+      run: |
+        echo "CI Pipeline Started"
+        echo "Code pushed to main branch"
+        echo "Starting validation process"
