@@ -2,7 +2,7 @@ name: Taboor
 
 on:
   push:
-    branches: [ main ]  
+    branches: [ main ]
 
 jobs: 
   ci-pipeline:
@@ -21,7 +21,7 @@ jobs:
     - name: Check Python syntax
       run: |
         echo "=== Python Syntax Validation ==="
-        echo "🔍 Checking Python files for syntax errors..."
+        echo "Checking Python files for syntax errors..."
         
         # Check if any Python files exist
         if find . -name "*.py" | grep -q "."; then
@@ -30,7 +30,33 @@ jobs:
           find . -name "*.py" -exec python -m py_compile {} \; && echo "✅ All Python files have valid syntax!"
         else
           echo "No Python files found to check"
-        fi        
+        fi
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+
+    - name: Check JavaScript syntax
+      run: |
+        echo "=== JavaScript Syntax Validation ==="
+        echo "Checking JavaScript files for syntax errors..."
+        
+        # Check frontend Main.js
+        if [ -f "frontend/Main.js" ]; then
+          echo "Checking frontend/Main.js..."
+          node -c frontend/Main.js && echo "✅ frontend/Main.js syntax valid!"
+        else
+          echo "frontend/Main.js not found"
+        fi
+        
+        # Check backend server.js
+        if [ -f "backend/server.js" ]; then
+          echo "Checking backend/server.js..."
+          node -c backend/server.js && echo "✅ backend/server.js syntax valid!"
+        else
+          echo "backend/server.js not found"
+        fi
 
     - name: Start CI process
       run: |
