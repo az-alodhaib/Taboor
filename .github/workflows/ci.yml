@@ -21,7 +21,7 @@ jobs:
     - name: Check Python syntax
       run: |
         echo "=== Python Syntax Validation ==="
-        echo "Checking Python files for syntax errors..."
+        echo "🔍 Checking Python files for syntax errors..."
         
         # Check if any Python files exist
         if find . -name "*.py" | grep -q "."; then
@@ -40,23 +40,47 @@ jobs:
     - name: Check JavaScript syntax
       run: |
         echo "=== JavaScript Syntax Validation ==="
-        echo "Checking JavaScript files for syntax errors..."
+        echo "🔍 Checking JavaScript files for syntax errors..."
         
         # Check frontend Main.js
         if [ -f "frontend/Main.js" ]; then
-          echo "Checking frontend/Main.js..."
+          echo "📁 Checking frontend/Main.js..."
           node -c frontend/Main.js && echo "✅ frontend/Main.js syntax valid!"
         else
-          echo "frontend/Main.js not found"
+          echo "ℹ️  frontend/Main.js not found"
         fi
         
         # Check backend server.js
         if [ -f "backend/server.js" ]; then
-          echo "Checking backend/server.js..."
+          echo "📁 Checking backend/server.js..."
           node -c backend/server.js && echo "✅ backend/server.js syntax valid!"
         else
-          echo "backend/server.js not found"
+          echo "ℹ️  backend/server.js not found"
         fi
+
+    - name: Validate project structure
+      run: |
+        echo "=== Project Structure Validation ==="
+        echo "🏗️  Checking if all critical project files exist..."
+        
+        # Frontend files
+        echo "--- Frontend Structure ---"
+        [ -f "frontend/index.html" ] && echo "✅ frontend/index.html exists" || echo "❌ frontend/index.html missing"
+        [ -f "frontend/Main.js" ] && echo "✅ frontend/Main.js exists" || echo "❌ frontend/Main.js missing"
+        [ -f "frontend/style.css" ] && echo "✅ frontend/style.css exists" || echo "❌ frontend/style.css missing"
+        
+        # Backend files
+        echo "--- Backend Structure ---"
+        [ -f "backend/Nootbook.ipynb" ] && echo "✅ backend/Nootbook.ipynb exists" || echo "❌ backend/Nootbook.ipynb missing"
+        [ -f "backend/queue_data.csv" ] && echo "✅ backend/queue_data.csv exists" || echo "❌ backend/queue_data.csv missing"
+        [ -f "backend/server.js" ] && echo "✅ backend/server.js exists" || echo "❌ backend/server.js missing"
+        
+        # Database files
+        echo "--- Database Structure ---"
+        [ -f "database/taboor.db" ] && echo "✅ database/taboor.db exists" || echo "❌ database/taboor.db missing"
+        [ -f "database/schema.sql" ] && echo "✅ database/schema.sql exists" || echo "❌ database/schema.sql missing"
+        
+        echo "📋 Project structure validation completed!"
 
     - name: Start CI process
       run: |
