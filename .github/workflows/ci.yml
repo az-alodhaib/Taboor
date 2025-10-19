@@ -134,3 +134,77 @@ jobs:
         fi
         
         echo "✅ All JavaScript files have valid syntax"  # ✅ FIXED - removed extra )
+
+          run-unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install Python testing dependencies
+      run: |
+        pip install pytest
+    
+    - name: Run Python unit tests
+      run: |
+        echo "=== PYTHON UNIT TESTS ==="
+        
+        # Find all Python test files
+        python_test_files=$(find . -name "test_*.py" -type f)
+        
+        if [ -z "$python_test_files" ]; then
+          echo "🚨 No Python test files found!"
+          echo "You must have test files for your Python code"
+          exit 1
+        fi
+        
+        echo "Found Python test files:"
+        echo "$python_test_files"
+        
+        echo "Running Python tests with pytest..."
+        # This will FAIL CI if any test fails
+        python -m pytest -v --tb=short
+        
+        echo "✅ All Python tests passed!"
+
+    - name: Run JavaScript unit tests
+      run: |
+        echo "=== JAVASCRIPT UNIT TESTS ==="
+        
+        # Find all JavaScript test files
+        js_test_files=$(find . -name "test_*.js" -type f)
+        
+        if [ -z "$js_test_files" ]; then
+          echo "🚨 No JavaScript test files found!"
+          echo "You must have test files for your JavaScript code"
+          exit 1
+        fi
+        
+        echo "Found JavaScript test files:"
+        echo "$js_test_files"
+        
+        echo "Running JavaScript tests..."
+        # Run each test file and FAIL if any test fails
+        for test_file in $js_test_files; do
+          echo "Running: $test_file"
+          if ! node "$test_file"; then
+            echo "❌ Test failed: $test_file"
+            echo "🚨 JavaScript tests failed - failing CI"
+            exit 1
+          fi
+          echo "✅ $test_file - PASSED"
+        done
+        
+        echo "✅ All JavaScript tests passed!"
