@@ -46,7 +46,7 @@ jobs:
         
         echo "✅ All critical files present"
 
-  validate-syntax:
+  validate-syntax:  # ✅ ADDED DASH (-) HERE
     name: Validate Code Syntax
     runs-on: ubuntu-latest
     
@@ -64,7 +64,7 @@ jobs:
       with:
         node-version: '20'
     
-    - name: Validate Python syntax  # ✅ FIXED - proper indentation
+    - name: Validate Python syntax
       run: |
         echo "=== PYTHON SYNTAX VALIDATION ==="
         
@@ -94,11 +94,12 @@ jobs:
         
         # Only exit after checking ALL files
         if [ "$error_found" = true ]; then
-          echo "🚨 Python syntax errors found - failing CI"
-          exit 1
+          echo "🚨 Python syntax errors found"
+          echo "PYTHON_ERRORS=true" >> $GITHUB_ENV
+        else
+          echo "✅ All Python files have valid syntax"
         fi
-        
-        echo "✅ All Python files have valid syntax"
+      continue-on-error: true
 
     - name: Validate JavaScript syntax
       run: |
@@ -129,8 +130,20 @@ jobs:
         
         # Only exit after checking ALL files
         if [ "$error_found" = true ]; then
-          echo "🚨 JavaScript syntax errors found - failing CI"
-          exit 1
+          echo "🚨 JavaScript syntax errors found"
+          echo "JAVASCRIPT_ERRORS=true" >> $GITHUB_ENV
+        else
+          echo "✅ All JavaScript files have valid syntax"
         fi
-        
-        echo "✅ All JavaScript files have valid syntax"  # ✅ FIXED - removed extra )
+      continue-on-error: true
+
+    - name: Fail if any syntax errors found
+      run: |
+        echo "=== FINAL SYNTAX VALIDATION RESULT ==="
+        if [ "$PYTHON_ERRORS" = "true" ] || [ "$JAVASCRIPT_ERRORS" = "true" ]; then
+          echo "🚨 CI FAILED: Syntax errors detected in the code"
+          echo "Please fix all syntax errors above"
+          exit 1
+        else
+          echo "✅ All syntax checks passed!"
+        fi
