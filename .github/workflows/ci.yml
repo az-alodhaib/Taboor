@@ -3,8 +3,6 @@ name: Taboor CI
 on:
   push:
     branches: [ main ]
-  pull_request:
-    branches: [ main ]
 
 jobs:
   validate-structure:
@@ -81,21 +79,15 @@ jobs:
         echo "Found Python files:"
         echo "$python_files"
         
-        # Check each Python file for syntax errors
-        error_found=false
+        # Check each Python file for syntax errors - EXIT ON FIRST ERROR
         for file in $python_files; do
+          echo "Checking: $file"
           if ! python -m py_compile "$file"; then
             echo "❌ SYNTAX ERROR in: $file"
-            error_found=true
-          else
-            echo "✅ $file - Syntax OK"
+            echo "🚨 Python syntax errors found - failing CI"
+            exit 1
           fi
         done
-        
-        if [ "$error_found" = true ]; then
-          echo "🚨 Python syntax errors found - failing CI"
-          exit 1
-        fi
         
         echo "✅ All Python files have valid syntax"
 
@@ -114,28 +106,21 @@ jobs:
         echo "Found JavaScript files:"
         echo "$js_files"
         
-        # Check each JavaScript file for syntax errors
-        error_found=false
+        # Check each JavaScript file for syntax errors - EXIT ON FIRST ERROR
         for file in $js_files; do
+          echo "Checking: $file"
           if ! node -c "$file"; then
             echo "❌ SYNTAX ERROR in: $file"
-            error_found=true
-          else
-            echo "✅ $file - Syntax OK"
+            echo "🚨 JavaScript syntax errors found - failing CI"
+            exit 1
           fi
         done
-        
-        if [ "$error_found" = true ]; then
-          echo "🚨 JavaScript syntax errors found - failing CI"
-          exit 1
-        fi
         
         echo "✅ All JavaScript files have valid syntax"
 
   run-tests:
     name: Run Unit Tests
     runs-on: ubuntu-latest
-    needs: [validate-structure, validate-syntax]
     
     steps:
     - name: Checkout code
@@ -162,8 +147,9 @@ jobs:
         python_test_files=$(find . -name "test_*.py" -type f)
         
         if [ -z "$python_test_files" ]; then
-          echo "ℹ️ No Python test files found"
-          exit 0
+          echo "🚨 No Python test files found - THIS SHOULD FAIL CI"
+          echo "You should have test files in your project"
+          exit 1
         fi
         
         echo "Running Python tests:"
@@ -171,8 +157,6 @@ jobs:
         
         # Run pytest - this will FAIL CI if any test fails
         python -m pytest -v --tb=short
-        
-        echo "✅ All Python tests passed"
 
     - name: Run JavaScript tests
       run: |
@@ -181,29 +165,24 @@ jobs:
         js_test_files=$(find . -name "test_*.js" -type f)
         
         if [ -z "$js_test_files" ]; then
-          echo "ℹ️ No JavaScript test files found"
-          exit 0
+          echo "🚨 No JavaScript test files found - THIS SHOULD FAIL CI"
+          echo "You should have test files in your project"
+          exit 1
         fi
         
         echo "Running JavaScript tests:"
         echo "$js_test_files"
         
-        # Run each JavaScript test and capture failures
-        any_test_failed=false
+        # Run each JavaScript test and FAIL if any test fails
         for test_file in $js_test_files; do
           echo "Running: $test_file"
-          if node "$test_file"; then
-            echo "✅ $test_file - PASSED"
-          else
+          if ! node "$test_file"; then
             echo "❌ $test_file - FAILED"
-            any_test_failed=true
+            echo "🚨 JavaScript tests failed - failing CI"
+            exit 1
           fi
+          echo "✅ $test_file - PASSED"
         done
-        
-        if [ "$any_test_failed" = true ]; then
-          echo "🚨 JavaScript tests failed - failing CI"
-          exit 1
-        fi
         
         echo "✅ All JavaScript tests passed"
 
@@ -211,7 +190,6 @@ jobs:
     name: Final CI Report
     runs-on: ubuntu-latest
     needs: [validate-structure, validate-syntax, run-tests]
-    if: always()
     
     steps:
     - name: Generate CI Report
@@ -235,6 +213,7 @@ jobs:
         else
           echo "⚠️  SOME CHECKS FAILED"
           echo "🔧 Please fix the issues above."
+          exit 1
         fi
         
         echo " "
