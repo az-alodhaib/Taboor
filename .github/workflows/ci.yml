@@ -1,134 +1,241 @@
-name: Taboor
+name: Taboor CI
 
 on:
   push:
     branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
-jobs: 
-  ci-pipeline:
-    name: CI pipeline
+jobs:
+  validate-structure:
+    name: Validate Project Structure
     runs-on: ubuntu-latest
-
+    
     steps:
-    - name: checkout code
-      uses: actions/checkout@v4  
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Validate critical files
+      run: |
+        echo "=== PROJECT STRUCTURE VALIDATION ==="
+        
+        # Critical files that must exist
+        critical_files=(
+          "frontend/index.html"
+          "frontend/Main.js" 
+          "frontend/style.css"
+          "backend/Nootbook.ipynb"
+          "backend/queue_data.csv"
+          "backend/server.js"
+          "database/taboor.db"
+          "database/schema.sql"
+        )
+        
+        all_files_exist=true
+        for file in "${critical_files[@]}"; do
+          if [ -f "$file" ]; then
+            echo "✅ $file exists"
+          else
+            echo "❌ MISSING: $file"
+            all_files_exist=false
+          fi
+        done
+        
+        if [ "$all_files_exist" = false ]; then
+          echo "🚨 Critical files missing - failing CI"
+          exit 1
+        fi
+        
+        echo "✅ All critical files present"
 
+  validate-syntax:
+    name: Validate Code Syntax
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
-
-    - name: Check Python syntax
-      run: |
-        echo "=== Python Syntax Validation ==="
-        echo "🔍 Checking Python files for syntax errors..."
-        
-        # This will FAIL CI if any syntax error found
-        if find . -name "*.py" | grep -q "."; then
-          echo "Found Python files. Checking syntax..."
-          # Exit immediately if any syntax error
-          find . -name "*.py" -exec python -m py_compile {} \;
-          echo "✅ All Python files have valid syntax!"
-        else
-          echo "No Python files found to check"
-        fi
-
+    
     - name: Set up Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '20'
-
-    - name: Check JavaScript syntax
+    
+    - name: Validate Python syntax
       run: |
-        echo "=== JavaScript Syntax Validation ==="
-        echo "🔍 Checking JavaScript files for syntax errors..."
+        echo "=== PYTHON SYNTAX VALIDATION ==="
         
-        # Check frontend Main.js - exit on error
-        if [ -f "frontend/Main.js" ]; then
-          echo "📁 Checking frontend/Main.js..."
-          node -c frontend/Main.js
-          echo "✅ frontend/Main.js syntax valid!"
-        else
-          echo "ℹ️  frontend/Main.js not found"
+        # Find all Python files
+        python_files=$(find . -name "*.py" -type f)
+        
+        if [ -z "$python_files" ]; then
+          echo "ℹ️ No Python files found"
+          exit 0
         fi
         
-        # Check backend server.js - exit on error
-        if [ -f "backend/server.js" ]; then
-          echo "📁 Checking backend/server.js..."
-          node -c backend/server.js
-          echo "✅ backend/server.js syntax valid!"
-        else
-          echo "ℹ️  backend/server.js not found"
+        echo "Found Python files:"
+        echo "$python_files"
+        
+        # Check each Python file for syntax errors
+        error_found=false
+        for file in $python_files; do
+          if ! python -m py_compile "$file"; then
+            echo "❌ SYNTAX ERROR in: $file"
+            error_found=true
+          else
+            echo "✅ $file - Syntax OK"
+          fi
+        done
+        
+        if [ "$error_found" = true ]; then
+          echo "🚨 Python syntax errors found - failing CI"
+          exit 1
         fi
+        
+        echo "✅ All Python files have valid syntax"
 
-    - name: Validate project structure
+    - name: Validate JavaScript syntax
       run: |
-        echo "=== Project Structure Validation ==="
-        echo "🏗️  Checking if all critical project files exist..."
+        echo "=== JAVASCRIPT SYNTAX VALIDATION ==="
         
-        # Frontend files
-        echo "--- Frontend Structure ---"
-        [ -f "frontend/index.html" ] && echo "✅ frontend/index.html exists" || echo "❌ frontend/index.html missing"
-        [ -f "frontend/Main.js" ] && echo "✅ frontend/Main.js exists" || echo "❌ frontend/Main.js missing"
-        [ -f "frontend/style.css" ] && echo "✅ frontend/style.css exists" || echo "❌ frontend/style.css missing"
+        # Find all JavaScript files
+        js_files=$(find . -name "*.js" -type f)
         
-        # Backend files
-        echo "--- Backend Structure ---"
-        [ -f "backend/Nootbook.ipynb" ] && echo "✅ backend/Nootbook.ipynb exists" || echo "❌ backend/Nootbook.ipynb missing"
-        [ -f "backend/queue_data.csv" ] && echo "✅ backend/queue_data.csv exists" || echo "❌ backend/queue_data.csv missing"
-        [ -f "backend/server.js" ] && echo "✅ backend/server.js exists" || echo "❌ backend/server.js missing"
+        if [ -z "$js_files" ]; then
+          echo "ℹ️ No JavaScript files found"
+          exit 0
+        fi
         
-        # Database files
-        echo "--- Database Structure ---"
-        [ -f "database/taboor.db" ] && echo "✅ database/taboor.db exists" || echo "❌ database/taboor.db missing"
-        [ -f "database/schema.sql" ] && echo "✅ database/schema.sql exists" || echo "❌ database/schema.sql missing"
+        echo "Found JavaScript files:"
+        echo "$js_files"
         
-        echo "📋 Project structure validation completed!"
+        # Check each JavaScript file for syntax errors
+        error_found=false
+        for file in $js_files; do
+          if ! node -c "$file"; then
+            echo "❌ SYNTAX ERROR in: $file"
+            error_found=true
+          else
+            echo "✅ $file - Syntax OK"
+          fi
+        done
+        
+        if [ "$error_found" = true ]; then
+          echo "🚨 JavaScript syntax errors found - failing CI"
+          exit 1
+        fi
+        
+        echo "✅ All JavaScript files have valid syntax"
 
-    - name: Execute Python tests
+  run-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    needs: [validate-structure, validate-syntax]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install Python dependencies
       run: |
-        echo "=== Python Test Execution ==="
-        echo "🧪 Running Python unit tests..."
-        
         pip install pytest
-        
-        if find . -name "test_*.py" | grep -q "."; then
-          echo "📁 Found Python test files. Running tests..."
-          # This will FAIL CI if any test fails
-          python -m pytest -v
-        else
-          echo "ℹ️  No Python test files found to execute"
-        fi
-
-    - name: Execute JavaScript tests
+    
+    - name: Run Python tests
       run: |
-        echo "=== JavaScript Test Execution ==="
-        echo "🧪 Running JavaScript unit tests..."
+        echo "=== PYTHON UNIT TESTS ==="
         
-        # This will FAIL CI if any test fails
-        if find . -name "test_*.js" | grep -q "."; then
-          echo "📁 Found JavaScript test files. Running tests..."
-          # Run tests and capture exit codes
-          for test_file in $(find . -name "test_*.js"); do
-            echo "Running $test_file..."
-            if ! node "$test_file"; then
-              echo "❌ Test failed: $test_file"
-              exit 1  # Exit CI with failure
-            fi
-          done
-          echo "✅ All JavaScript tests passed!"
-        else
-          echo "ℹ️  No JavaScript test files found to execute"
+        python_test_files=$(find . -name "test_*.py" -type f)
+        
+        if [ -z "$python_test_files" ]; then
+          echo "ℹ️ No Python test files found"
+          exit 0
         fi
+        
+        echo "Running Python tests:"
+        echo "$python_test_files"
+        
+        # Run pytest - this will FAIL CI if any test fails
+        python -m pytest -v --tb=short
+        
+        echo "✅ All Python tests passed"
 
+    - name: Run JavaScript tests
+      run: |
+        echo "=== JAVASCRIPT UNIT TESTS ==="
+        
+        js_test_files=$(find . -name "test_*.js" -type f)
+        
+        if [ -z "$js_test_files" ]; then
+          echo "ℹ️ No JavaScript test files found"
+          exit 0
+        fi
+        
+        echo "Running JavaScript tests:"
+        echo "$js_test_files"
+        
+        # Run each JavaScript test and capture failures
+        any_test_failed=false
+        for test_file in $js_test_files; do
+          echo "Running: $test_file"
+          if node "$test_file"; then
+            echo "✅ $test_file - PASSED"
+          else
+            echo "❌ $test_file - FAILED"
+            any_test_failed=true
+          fi
+        done
+        
+        if [ "$any_test_failed" = true ]; then
+          echo "🚨 JavaScript tests failed - failing CI"
+          exit 1
+        fi
+        
+        echo "✅ All JavaScript tests passed"
+
+  final-report:
+    name: Final CI Report
+    runs-on: ubuntu-latest
+    needs: [validate-structure, validate-syntax, run-tests]
+    if: always()
+    
+    steps:
     - name: Generate CI Report
       run: |
         echo " "
         echo "=========================================="
-        echo "🚀 TABOOR CI PIPELINE - FINAL REPORT"
+        echo "🚀 TABOOR CI PIPELINE - COMPLETE"
         echo "=========================================="
         echo " "
-        echo "🎉 SUCCESS: All CI checks passed!"
-        echo "💡 Your code is ready for deployment."
+        echo "📊 EXECUTION SUMMARY:"
+        echo "├── Project Structure: ${{ needs.validate-structure.result }}"
+        echo "├── Code Syntax: ${{ needs.validate-syntax.result }}"
+        echo "└── Unit Tests: ${{ needs.run-tests.result }}"
+        echo " "
+        
+        if [[ "${{ needs.validate-structure.result }}" == "success" && 
+              "${{ needs.validate-syntax.result }}" == "success" && 
+              "${{ needs.run-tests.result }}" == "success" ]]; then
+          echo "🎉 ALL CHECKS PASSED!"
+          echo "💡 Your code is production-ready."
+        else
+          echo "⚠️  SOME CHECKS FAILED"
+          echo "🔧 Please fix the issues above."
+        fi
+        
         echo " "
         echo "=========================================="
