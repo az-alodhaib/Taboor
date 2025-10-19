@@ -46,7 +46,7 @@ jobs:
         
         echo "✅ All critical files present"
 
-    validate-syntax:
+      validate-syntax:
     name: Validate Code Syntax
     runs-on: ubuntu-latest
     
@@ -79,16 +79,23 @@ jobs:
         echo "Checking Python files:"
         echo "$python_files"
         
-        # Check each Python file for syntax errors - EXIT ON FIRST ERROR
+        # Check each Python file but CONTINUE to find ALL errors
+        error_found=false
         for file in $python_files; do
           echo "Checking: $file"
           if ! python -m py_compile "$file"; then
             echo "❌ SYNTAX ERROR in: $file"
-            echo "🚨 Python syntax errors found - failing CI"
-            exit 1
+            error_found=true
+          else
+            echo "✅ $file - Syntax OK"
           fi
-          echo "✅ $file - Syntax OK"
         done
+        
+        # Only exit after checking ALL files
+        if [ "$error_found" = true ]; then
+          echo "🚨 Python syntax errors found - failing CI"
+          exit 1
+        fi
         
         echo "✅ All Python files have valid syntax"
 
@@ -107,15 +114,22 @@ jobs:
         echo "Checking JavaScript files:"
         echo "$js_files"
         
-        # Check each JavaScript file for syntax errors - EXIT ON FIRST ERROR
+        # Check each JavaScript file but CONTINUE to find ALL errors
+        error_found=false
         for file in $js_files; do
           echo "Checking: $file"
           if ! node -c "$file"; then
             echo "❌ SYNTAX ERROR in: $file"
-            echo "🚨 JavaScript syntax errors found - failing CI"
-            exit 1
+            error_found=true
+          else
+            echo "✅ $file - Syntax OK"
           fi
-          echo "✅ $file - Syntax OK"
         done
+        
+        # Only exit after checking ALL files
+        if [ "$error_found" = true ]; then
+          echo "🚨 JavaScript syntax errors found - failing CI"
+          exit 1
+        fi
         
         echo "✅ All JavaScript files have valid syntax"
