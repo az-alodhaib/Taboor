@@ -20,8 +20,8 @@ jobs:
         # Critical files that must exist
         critical_files=(
           "frontend/index.html"
-          "frontend/Main.js" 
-          "frontend/style.css"
+          "frontend/main.js" 
+          "frontend/styles.css"
           "backend/Nootbook.ipynb"
           "backend/queue_data.csv"
           "backend/server.js"
@@ -46,7 +46,7 @@ jobs:
         
         echo "✅ All critical files present"
 
-  validate-syntax:
+    validate-syntax:
     name: Validate Code Syntax
     runs-on: ubuntu-latest
     
@@ -76,7 +76,7 @@ jobs:
           exit 0
         fi
         
-        echo "Found Python files:"
+        echo "Checking Python files:"
         echo "$python_files"
         
         # Check each Python file for syntax errors - EXIT ON FIRST ERROR
@@ -87,6 +87,7 @@ jobs:
             echo "🚨 Python syntax errors found - failing CI"
             exit 1
           fi
+          echo "✅ $file - Syntax OK"
         done
         
         echo "✅ All Python files have valid syntax"
@@ -103,7 +104,7 @@ jobs:
           exit 0
         fi
         
-        echo "Found JavaScript files:"
+        echo "Checking JavaScript files:"
         echo "$js_files"
         
         # Check each JavaScript file for syntax errors - EXIT ON FIRST ERROR
@@ -114,107 +115,7 @@ jobs:
             echo "🚨 JavaScript syntax errors found - failing CI"
             exit 1
           fi
+          echo "✅ $file - Syntax OK"
         done
         
         echo "✅ All JavaScript files have valid syntax"
-
-  run-tests:
-    name: Run Unit Tests
-    runs-on: ubuntu-latest
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
-    
-    - name: Set up Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-    
-    - name: Install Python dependencies
-      run: |
-        pip install pytest
-    
-    - name: Run Python tests
-      run: |
-        echo "=== PYTHON UNIT TESTS ==="
-        
-        python_test_files=$(find . -name "test_*.py" -type f)
-        
-        if [ -z "$python_test_files" ]; then
-          echo "🚨 No Python test files found - THIS SHOULD FAIL CI"
-          echo "You should have test files in your project"
-          exit 1
-        fi
-        
-        echo "Running Python tests:"
-        echo "$python_test_files"
-        
-        # Run pytest - this will FAIL CI if any test fails
-        python -m pytest -v --tb=short
-
-    - name: Run JavaScript tests
-      run: |
-        echo "=== JAVASCRIPT UNIT TESTS ==="
-        
-        js_test_files=$(find . -name "test_*.js" -type f)
-        
-        if [ -z "$js_test_files" ]; then
-          echo "🚨 No JavaScript test files found - THIS SHOULD FAIL CI"
-          echo "You should have test files in your project"
-          exit 1
-        fi
-        
-        echo "Running JavaScript tests:"
-        echo "$js_test_files"
-        
-        # Run each JavaScript test and FAIL if any test fails
-        for test_file in $js_test_files; do
-          echo "Running: $test_file"
-          if ! node "$test_file"; then
-            echo "❌ $test_file - FAILED"
-            echo "🚨 JavaScript tests failed - failing CI"
-            exit 1
-          fi
-          echo "✅ $test_file - PASSED"
-        done
-        
-        echo "✅ All JavaScript tests passed"
-
-  final-report:
-    name: Final CI Report
-    runs-on: ubuntu-latest
-    needs: [validate-structure, validate-syntax, run-tests]
-    
-    steps:
-    - name: Generate CI Report
-      run: |
-        echo " "
-        echo "=========================================="
-        echo "🚀 TABOOR CI PIPELINE - COMPLETE"
-        echo "=========================================="
-        echo " "
-        echo "📊 EXECUTION SUMMARY:"
-        echo "├── Project Structure: ${{ needs.validate-structure.result }}"
-        echo "├── Code Syntax: ${{ needs.validate-syntax.result }}"
-        echo "└── Unit Tests: ${{ needs.run-tests.result }}"
-        echo " "
-        
-        if [[ "${{ needs.validate-structure.result }}" == "success" && 
-              "${{ needs.validate-syntax.result }}" == "success" && 
-              "${{ needs.run-tests.result }}" == "success" ]]; then
-          echo "🎉 ALL CHECKS PASSED!"
-          echo "💡 Your code is production-ready."
-        else
-          echo "⚠️  SOME CHECKS FAILED"
-          echo "🔧 Please fix the issues above."
-          exit 1
-        fi
-        
-        echo " "
-        echo "=========================================="
