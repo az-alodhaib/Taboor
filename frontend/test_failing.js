@@ -1,15 +1,9 @@
-// JavaScript test that should FAIL
+// Simple failing JavaScript test
 function testFailingAddition() {
     if (2 + 2 !== 5) {  // This is wrong!
-        throw new Error("Failing addition test failed (as expected)");
+        throw new Error("Failing test: 2+2 should equal 5 (this is wrong on purpose)");
     }
 }
 
-// Run the failing test
-try {
-    testFailingAddition();
-    console.log("❌ This should not print - test should have failed");
-} catch (error) {
-    console.log("✅ Failing test correctly failed:", error.message);
-    // Don't exit with error code for this demonstration
-}
+// This will throw an error and fail the test
+testFailingAddition();
