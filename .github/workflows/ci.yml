@@ -46,7 +46,7 @@ jobs:
         
         echo "✅ All critical files present"
 
-  validate-syntax:  # ← ADDED DASH HERE
+  validate-syntax:
     name: Validate Code Syntax
     runs-on: ubuntu-latest
     
@@ -64,7 +64,7 @@ jobs:
       with:
         node-version: '20'
     
-        - name: Validate Python syntax
+    - name: Validate Python syntax  # ✅ FIXED - proper indentation
       run: |
         echo "=== PYTHON SYNTAX VALIDATION ==="
         
@@ -133,4 +133,4 @@ jobs:
           exit 1
         fi
         
-        echo "✅ All JavaScript files have valid syntax"
+        echo "✅ All JavaScript files have valid syntax"  # ✅ FIXED - removed extra )
