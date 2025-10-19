@@ -46,7 +46,7 @@ jobs:
         
         echo "✅ All critical files present"
 
-  validate-syntax:  # ✅ ADDED DASH (-) HERE
+  validate-syntax:
     name: Validate Code Syntax
     runs-on: ubuntu-latest
     
@@ -79,15 +79,17 @@ jobs:
         echo "Checking Python files:"
         echo "$python_files"
         
-        # Check each Python file but CONTINUE even when errors are found
+        # Check each Python file - shows exact errors but continues
         error_found=false
         for file in $python_files; do
           echo "Checking: $file"
-          # Use a different approach that doesn't exit on error
-          if python -c "import ast; ast.parse(open('$file').read())" 2>/dev/null; then
+          # Use py_compile but capture output without stopping
+          output=$(python -m py_compile "$file" 2>&1)
+          if [ $? -eq 0 ]; then
             echo "✅ $file - Syntax OK"
           else
             echo "❌ SYNTAX ERROR in: $file"
+            echo "   Error details: $output"  # Shows exact error with line numbers
             error_found=true
           fi
         done
@@ -120,11 +122,14 @@ jobs:
         error_found=false
         for file in $js_files; do
           echo "Checking: $file"
-          if ! node -c "$file"; then
-            echo "❌ SYNTAX ERROR in: $file"
-            error_found=true
-          else
+          # Capture JavaScript syntax errors without stopping
+          output=$(node -c "$file" 2>&1)
+          if [ $? -eq 0 ]; then
             echo "✅ $file - Syntax OK"
+          else
+            echo "❌ SYNTAX ERROR in: $file"
+            echo "   Error details: $output"  # Shows exact JavaScript error
+            error_found=true
           fi
         done
         
@@ -142,7 +147,7 @@ jobs:
         echo "=== FINAL SYNTAX VALIDATION RESULT ==="
         if [ "$PYTHON_ERRORS" = "true" ] || [ "$JAVASCRIPT_ERRORS" = "true" ]; then
           echo "🚨 CI FAILED: Syntax errors detected in the code"
-          echo "Please fix all syntax errors above"
+          echo "Please fix all syntax errors shown above"
           exit 1
         else
           echo "✅ All syntax checks passed!"
