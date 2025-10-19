@@ -46,7 +46,7 @@ jobs:
         
         echo "✅ All critical files present"
 
-      validate-syntax:
+  validate-syntax:  # ← ADDED DASH HERE
     name: Validate Code Syntax
     runs-on: ubuntu-latest
     
