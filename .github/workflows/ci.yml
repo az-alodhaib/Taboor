@@ -23,11 +23,12 @@ jobs:
         echo "=== Python Syntax Validation ==="
         echo "🔍 Checking Python files for syntax errors..."
         
-        # Check if any Python files exist
+        # This will FAIL CI if any syntax error found
         if find . -name "*.py" | grep -q "."; then
           echo "Found Python files. Checking syntax..."
-          # Check each Python file for syntax errors
-          find . -name "*.py" -exec python -m py_compile {} \; && echo "✅ All Python files have valid syntax!"
+          # Exit immediately if any syntax error
+          find . -name "*.py" -exec python -m py_compile {} \;
+          echo "✅ All Python files have valid syntax!"
         else
           echo "No Python files found to check"
         fi
@@ -42,18 +43,20 @@ jobs:
         echo "=== JavaScript Syntax Validation ==="
         echo "🔍 Checking JavaScript files for syntax errors..."
         
-        # Check frontend Main.js
+        # Check frontend Main.js - exit on error
         if [ -f "frontend/Main.js" ]; then
           echo "📁 Checking frontend/Main.js..."
-          node -c frontend/Main.js && echo "✅ frontend/Main.js syntax valid!"
+          node -c frontend/Main.js
+          echo "✅ frontend/Main.js syntax valid!"
         else
           echo "ℹ️  frontend/Main.js not found"
         fi
         
-        # Check backend server.js
+        # Check backend server.js - exit on error
         if [ -f "backend/server.js" ]; then
           echo "📁 Checking backend/server.js..."
-          node -c backend/server.js && echo "✅ backend/server.js syntax valid!"
+          node -c backend/server.js
+          echo "✅ backend/server.js syntax valid!"
         else
           echo "ℹ️  backend/server.js not found"
         fi
@@ -87,12 +90,11 @@ jobs:
         echo "=== Python Test Execution ==="
         echo "🧪 Running Python unit tests..."
         
-        # Install pytest if not already installed
         pip install pytest
         
-        # Check if any test files exist and run them
         if find . -name "test_*.py" | grep -q "."; then
           echo "📁 Found Python test files. Running tests..."
+          # This will FAIL CI if any test fails
           python -m pytest -v
         else
           echo "ℹ️  No Python test files found to execute"
@@ -103,11 +105,18 @@ jobs:
         echo "=== JavaScript Test Execution ==="
         echo "🧪 Running JavaScript unit tests..."
         
-        # Check if any test files exist and run them
+        # This will FAIL CI if any test fails
         if find . -name "test_*.js" | grep -q "."; then
           echo "📁 Found JavaScript test files. Running tests..."
-          # Run each JavaScript test file
-          find . -name "test_*.js" -exec node {} \;
+          # Run tests and capture exit codes
+          for test_file in $(find . -name "test_*.js"); do
+            echo "Running $test_file..."
+            if ! node "$test_file"; then
+              echo "❌ Test failed: $test_file"
+              exit 1  # Exit CI with failure
+            fi
+          done
+          echo "✅ All JavaScript tests passed!"
         else
           echo "ℹ️  No JavaScript test files found to execute"
         fi
@@ -118,13 +127,6 @@ jobs:
         echo "=========================================="
         echo "🚀 TABOOR CI PIPELINE - FINAL REPORT"
         echo "=========================================="
-        echo " "
-        echo "📊 VALIDATION SUMMARY:"
-        echo "├── ✅ Python Syntax: Validated"
-        echo "├── ✅ JavaScript Syntax: Validated" 
-        echo "├── ✅ Project Structure: Verified"
-        echo "├── ✅ Python Tests: Executed"
-        echo "└── ✅ JavaScript Tests: Executed"
         echo " "
         echo "🎉 SUCCESS: All CI checks passed!"
         echo "💡 Your code is ready for deployment."
