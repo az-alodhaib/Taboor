@@ -64,7 +64,7 @@ jobs:
       with:
         node-version: '20'
     
-    - name: Validate Python syntax
+        - name: Validate Python syntax
       run: |
         echo "=== PYTHON SYNTAX VALIDATION ==="
         
@@ -79,15 +79,16 @@ jobs:
         echo "Checking Python files:"
         echo "$python_files"
         
-        # Check each Python file but CONTINUE to find ALL errors
+        # Check each Python file but CONTINUE even when errors are found
         error_found=false
         for file in $python_files; do
           echo "Checking: $file"
-          if ! python -m py_compile "$file"; then
+          # Use a different approach that doesn't exit on error
+          if python -c "import ast; ast.parse(open('$file').read())" 2>/dev/null; then
+            echo "✅ $file - Syntax OK"
+          else
             echo "❌ SYNTAX ERROR in: $file"
             error_found=true
-          else
-            echo "✅ $file - Syntax OK"
           fi
         done
         
