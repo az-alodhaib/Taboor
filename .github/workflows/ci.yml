@@ -135,8 +135,8 @@ jobs:
         
         echo "✅ All JavaScript files have valid syntax"
 
-  run-unit-tests:  # ✅ ADDED DASH (-) HERE
-    name: Run Unit Tests
+  run-unit-tests:
+    name: Run Unit Tests  # ← FIXED: Added proper indentation
     runs-on: ubuntu-latest
     
     steps:
@@ -155,7 +155,7 @@ jobs:
     
     - name: Install Python testing dependencies
       run: |
-        pip install pytest
+        pip install pytest pandas  # ← PANDAS ADDED HERE
     
     - name: Run Python unit tests
       run: |
@@ -178,7 +178,7 @@ jobs:
         python -m pytest -v --tb=short
         
         echo "✅ All Python tests passed!"
-
+    
     - name: Run JavaScript unit tests
       run: |
         echo "=== JAVASCRIPT UNIT TESTS ==="
@@ -208,5 +208,3 @@ jobs:
         done
         
         echo "✅ All JavaScript tests passed!"
-
-  
