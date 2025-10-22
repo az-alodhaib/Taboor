@@ -1,6 +1,6 @@
-syntax error
-def broken_function(
-    print("This function has missing parenthesis"
+# syntax error
+# def broken_function(
+#     print("This function has missing parenthesis"
 
 # success unit test    
 def test_addition():
