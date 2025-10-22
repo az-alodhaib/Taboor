@@ -1,14 +1,23 @@
+syntax error
+def broken_function(
+    print("This function has missing parenthesis"
+
+# success unit test    
 def test_addition():
-    """Simple test that should always pass"""
-    assert 1 + 1 == 2
+    result = 2 + 2
+    assert result == 4
+    
+def test_subtraction():
+    result = 5 - 3
+    assert result == 2
 
-def test_string_concatenation():
-    """Test string operations"""
-    name = "Taboor"
-    assert name + " CI" == "Taboor CI"
+#faild unit test
+def test_multiplication():
+    result = 3 * 3
+    assert result == 10
 
-def test_list_operations():
-    """Test list operations"""
-    numbers = [1, 2, 3]
-    assert len(numbers) == 3
-    assert numbers[0] == 1
+if __name__ == "__main__":
+    test_addition()
+    test_subtraction()
+    test_multiplication()
+    print("All tests completed!")
