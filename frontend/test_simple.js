@@ -1,25 +1,27 @@
-// Simple JavaScript test that should always pass
-function testAddition() {
-    if (1 + 1 !== 2) {
-        throw new Error("Addition test failed");
-    }
-    console.log("✅ Addition test passed");
-}
+// syntax error
+// function brokenFunction(
+//     console.log("This function has missing parenthesis"
 
-function testStringConcatenation() {
-    const name = "Taboor";
-    if (name + " CI" !== "Taboor CI") {
-        throw new Error("String concatenation test failed");
-    }
-    console.log("✅ String concatenation test passed");
-}
+// function testAddition() {
+//     let result = 2 + 2;
+//     if (result !== 4) throw new Error("Addition failed");
+//     console.log("Addition test passed!");
+// }
 
-// Run the tests
-try {
-    testAddition();
-    testStringConcatenation();
-    console.log("🎉 All JavaScript tests passed!");
-} catch (error) {
-    console.error("❌ Test failed:", error.message);
-    process.exit(1); // Exit with error code
-}
+// function testSubtraction() {
+//     let result = 5 - 3;
+//     if (result !== 2) throw new Error("Subtraction failed");
+//     console.log("Subtraction test passed!");
+// }
+
+// // faild unit test
+// function testMultiplication() {
+//     let result = 3 * 3;
+//     if (result !== 10) throw new Error("Multiplication failed");
+//     console.log("This won't print because test fails before here");
+// }
+
+// testAddition();
+// testSubtraction();
+// testMultiplication();
+// console.log("All tests completed!");
