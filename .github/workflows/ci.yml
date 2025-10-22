@@ -1,20 +1,210 @@
-name: Taboor
+name: Taboor CI
 
 on:
   push:
-    branches: [main]
+    branches: [ main ]
 
-jobs: 
-  ci-pipeline:
-    name: CI pipeline
+jobs:
+  validate-structure:
+    name: Validate Project Structure
     runs-on: ubuntu-latest
-
+    
     steps:
-    - name: checkout code
-      uses: actions/checkout@v4    
-
-    - name: Start CI process
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Validate critical files
       run: |
-        echo "CI Pipeline Started"
-        echo "Code pushed to main branch"
-        echo "Starting validation process"
+        echo "=== PROJECT STRUCTURE VALIDATION ==="
+        
+        # Critical files that must exist
+        critical_files=(
+          "frontend/index.html"
+          "frontend/main.js" 
+          "frontend/styles.css"
+          "backend/Nootbook.ipynb"
+          "backend/queue_data.csv"
+          "backend/server.js"
+          "database/taboor.db"
+          "database/schema.sql"
+        )
+        
+        all_files_exist=true
+        for file in "${critical_files[@]}"; do
+          if [ -f "$file" ]; then
+            echo "✅ $file exists"
+          else
+            echo "❌ MISSING: $file"
+            all_files_exist=false
+          fi
+        done
+        
+        if [ "$all_files_exist" = false ]; then
+          echo "🚨 Critical files missing - failing CI"
+          exit 1
+        fi
+        
+        echo "✅ All critical files present"
+
+  validate-syntax:
+    name: Validate Code Syntax
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Validate Python syntax
+      run: |
+        echo "=== PYTHON SYNTAX VALIDATION ==="
+        
+        # Find all Python files
+        python_files=$(find . -name "*.py" -type f)
+        
+        if [ -z "$python_files" ]; then
+          echo "ℹ️ No Python files found"
+          exit 0
+        fi
+        
+        echo "Checking Python files:"
+        echo "$python_files"
+        
+        # Check each Python file but CONTINUE even when errors are found
+        error_found=false
+        for file in $python_files; do
+          echo "Checking: $file"
+          # Use a different approach that doesn't exit on error
+          if python -c "import ast; ast.parse(open('$file').read())" 2>/dev/null; then
+            echo "✅ $file - Syntax OK"
+          else
+            echo "❌ SYNTAX ERROR in: $file"
+            error_found=true
+          fi
+        done
+        
+        # Only exit after checking ALL files
+        if [ "$error_found" = true ]; then
+          echo "🚨 Python syntax errors found - failing CI"
+          exit 1
+        fi
+        
+        echo "✅ All Python files have valid syntax"
+
+    - name: Validate JavaScript syntax
+      run: |
+        echo "=== JAVASCRIPT SYNTAX VALIDATION ==="
+        
+        # Find all JavaScript files
+        js_files=$(find . -name "*.js" -type f)
+        
+        if [ -z "$js_files" ]; then
+          echo "ℹ️ No JavaScript files found"
+          exit 0
+        fi
+        
+        echo "Checking JavaScript files:"
+        echo "$js_files"
+        
+        # Check each JavaScript file but CONTINUE to find ALL errors
+        error_found=false
+        for file in $js_files; do
+          echo "Checking: $file"
+          if ! node -c "$file"; then
+            echo "❌ SYNTAX ERROR in: $file"
+            error_found=true
+          else
+            echo "✅ $file - Syntax OK"
+          fi
+        done
+        
+        # Only exit after checking ALL files
+        if [ "$error_found" = true ]; then
+          echo "🚨 JavaScript syntax errors found - failing CI"
+          exit 1
+        fi
+        
+        echo "✅ All JavaScript files have valid syntax"
+
+  run-unit-tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+    
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+    
+    - name: Install Python testing dependencies
+      run: |
+        pip install pytest pandas scikit-learn  # ← scikit-learn ADDED HERE
+    
+    - name: Run Python unit tests
+      run: |
+        echo "=== PYTHON UNIT TESTS ==="
+        
+        # Find all Python test files
+        python_test_files=$(find . -name "test_*.py" -type f)
+        
+        if [ -z "$python_test_files" ]; then
+          echo "🚨 No Python test files found!"
+          echo "You must have test files for your Python code"
+          exit 1
+        fi
+        
+        echo "Found Python test files:"
+        echo "$python_test_files"
+        
+        echo "Running Python tests with pytest..."
+        # This will FAIL CI if any test fails
+        python -m pytest -v --tb=short
+        
+        echo "✅ All Python tests passed!"
+    
+    - name: Run JavaScript unit tests
+      run: |
+        echo "=== JAVASCRIPT UNIT TESTS ==="
+        
+        # Find all JavaScript test files
+        js_test_files=$(find . -name "test_*.js" -type f)
+        
+        if [ -z "$js_test_files" ]; then
+          echo "🚨 No JavaScript test files found!"
+          echo "You must have test files for your JavaScript code"
+          exit 1
+        fi
+        
+        echo "Found JavaScript test files:"
+        echo "$js_test_files"
+        
+        echo "Running JavaScript tests..."
+        # Run each test file and FAIL if any test fails
+        for test_file in $js_test_files; do
+          echo "Running: $test_file"
+          if ! node "$test_file"; then
+            echo "❌ Test failed: $test_file"
+            echo "🚨 JavaScript tests failed - failing CI"
+            exit 1
+          fi
+          echo "✅ $test_file - PASSED"
+        done
+        
+        echo "✅ All JavaScript tests passed!"
