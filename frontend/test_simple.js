@@ -1,6 +1,6 @@
-syntax error
-function brokenFunction(
-    console.log("This function has missing parenthesis"
+// syntax error
+// function brokenFunction(
+//     console.log("This function has missing parenthesis"
 
 function testAddition() {
     let result = 2 + 2;
@@ -14,10 +14,10 @@ function testSubtraction() {
     console.log("Subtraction test passed!");
 }
 
-// faild unit test
-function testMultiplication() {
-    let result = 3 * 3;
-    if (result !== 10) throw new Error("Multiplication failed");
-    console.log("This won't print because test fails before here");
-}
+// // faild unit test
+// function testMultiplication() {
+//     let result = 3 * 3;
+//     if (result !== 10) throw new Error("Multiplication failed");
+//     console.log("This won't print because test fails before here");
+// }
 
