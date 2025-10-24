@@ -14,7 +14,7 @@
     <!-- Custom CSS -->
     <link href="styles.css" rel="stylesheet">
 </head>
-<body class="bg-light">
+<body>
     
     <!-- Main Container -->
     <div class="container mt-5">
@@ -132,5 +132,45 @@
     
     <!-- Custom JS -->
     <script src="main.js"></script>
+    <script>
+document.addEventListener("DOMContentLoaded", function () {
+    const loginForm = document.querySelector("#login-form form");
+
+    loginForm.addEventListener("submit", function (e) {
+        e.preventDefault(); // Stop form reload
+
+        const email = loginForm.querySelector('input[type="email"]').value.trim();
+        const password = loginForm.querySelector('input[type="password"]').value.trim();
+
+        if (email === "" || password === "") {
+            alert("يرجى إدخال البريد الإلكتروني وكلمة المرور.");
+            return;
+        }
+
+        // For now, just redirect to the home page
+        window.location.href = "home_page.html";
+    });
+
+    // Switch between login and register forms
+    const showRegister = document.getElementById("show-register");
+    const showLogin = document.getElementById("show-login");
+    const loginCard = document.getElementById("login-form");
+    const registerCard = document.getElementById("register-form");
+
+    if (showRegister && showLogin) {
+        showRegister.addEventListener("click", function (e) {
+            e.preventDefault();
+            loginCard.classList.add("d-none");
+            registerCard.classList.remove("d-none");
+        });
+
+        showLogin.addEventListener("click", function (e) {
+            e.preventDefault();
+            registerCard.classList.add("d-none");
+            loginCard.classList.remove("d-none");
+        });
+    }
+});
+</script>
 </body>
 </html>

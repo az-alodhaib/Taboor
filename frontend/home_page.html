@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>طابور - اختر الخدمة</title>
+    
+    <!-- Bootstrap CSS -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.rtl.min.css" rel="stylesheet">
+    
+    <!-- Bootstrap Icons -->
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" rel="stylesheet">
+    
+    <!-- Custom CSS -->
+    <link href="styles.css" rel="stylesheet">
+</head>
+<body>
+    
+    <!-- Header Section: Top navigation bar with gradient -->
+    <header class="header-gradient">
+        <div class="container">
+            <div class="d-flex justify-content-between align-items-center py-3">
+                <h2 class="text-white m-0">
+                    <i class="bi bi-clock-history me-2"></i>
+                    طابور
+                </h2>
+                <p class="text-white m-0">إدارة الطوابير الذكية</p>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Container -->
+    <div class="container mt-4">
+        
+        <!-- Page Title -->
+        <div class="mb-4">
+            <h3>اختر الخدمة</h3>
+        </div>
+
+        <!-- Service Category Dropdown -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <label class="form-label">
+                    <i class="bi bi-scissors me-2"></i>
+                    نوع الخدمة
+                </label>
+                <select class="form-select" id="service-category">
+                    <option value="">اختر نوع الخدمة...</option>
+                    <option value="barber">صالون حلاقة</option>
+                    <option value="carwash">غسيل سيارات</option>
+                    <option value="oil-change">تغيير زيت</option>
+                    <option value="restaurant">مطعم</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- Search Bar -->
+        <div class="card mb-4">
+            <div class="card-body">
+                <div class="input-group">
+                    <span class="input-group-text bg-white">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input 
+                        type="text" 
+                        class="form-control" 
+                        id="search-input" 
+                        placeholder="ابحث عن مقدم خدمة محدد...">
+                </div>
+            </div>
+        </div>
+
+        <!-- Nearby Services Section -->
+        <div class="mb-4">
+            <h5>
+                <i class="bi bi-geo-alt me-2"></i>
+                مقدمي الخدمة القريبين
+            </h5>
+        </div>
+
+        <!-- Google Maps Placeholder -->
+        <div class="card mb-4">
+            <div class="map-placeholder">
+                <i class="bi bi-map display-1 text-muted"></i>
+                <p class="text-muted mt-3">تكامل خرائط جوجل</p>
+                <small class="text-muted">عرض الخدمات القريبة منك</small>
+            </div>
+        </div>
+
+        <!-- Service Providers List -->
+        <div id="service-providers-list">
+            <!-- This will be filled dynamically by JavaScript -->
+        </div>
+
+    </div>
+
+    <!-- Bootstrap JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Custom JavaScript -->
+    <script src="main.js"></script>
+</body>
+</html>
