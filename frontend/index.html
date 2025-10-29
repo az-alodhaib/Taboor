@@ -40,13 +40,13 @@
                             <!-- Email Input -->
                             <div class="mb-3">
                                 <label class="form-label">البريد الإلكتروني</label>
-                                <input type="email" class="form-control" placeholder="أدخل بريدك الإلكتروني" required>
+                                <input type="email" class="form-control" id="email-log" placeholder="أدخل بريدك الإلكتروني" required>
                             </div>
                             
                             <!-- Password Input -->
                             <div class="mb-3">
                                 <label class="form-label">كلمة المرور</label>
-                                <input type="password" class="form-control" placeholder="أدخل كلمة المرور" required>
+                                <input type="password" class="form-control" id="pass-log" placeholder="أدخل كلمة المرور" required>
                             </div>
                             
                             <!-- Forgot Password -->
@@ -57,7 +57,7 @@
                             <!-- Submit Button -->
                             <div class="d-grid mb-3">
                                 <button type="submit" class="btn btn-gradient">
-                                    <i class="bi bi-arrow-left me-2"></i>
+                                    <i class="bi bi-arrow-left me-2" id="move-next"></i>
                                     تسجيل الدخول
                                 </button>
                             </div>
@@ -89,25 +89,25 @@
                             <!-- Name -->
                             <div class="mb-3">
                                 <label class="form-label">الاسم الكامل</label>
-                                <input type="text" class="form-control" required>
+                                <input type="text" class="form-control" id="name" required>
                             </div>
                             
                             <!-- Email -->
                             <div class="mb-3">
                                 <label class="form-label">البريد الإلكتروني</label>
-                                <input type="email" class="form-control" required>
+                                <input type="email" class="form-control" id="email-reg" required>
                             </div>
                             
                             <!-- Phone -->
                             <div class="mb-3">
                                 <label class="form-label">رقم الهاتف</label>
-                                <input type="tel" class="form-control" placeholder="+966 5X XXX XXXX" required>
+                                <input type="tel" class="form-control" id="phone" placeholder="+966 5X XXX XXXX" required>
                             </div>
                             
                             <!-- Password -->
                             <div class="mb-3">
                                 <label class="form-label">كلمة المرور</label>
-                                <input type="password" class="form-control" required>
+                                <input type="password" class="form-control" id="pass-reg" required>
                             </div>
                             
                             <!-- Submit -->
@@ -131,46 +131,7 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
     
     <!-- Custom JS -->
-    <script src="main.js"></script>
-    <script>
-document.addEventListener("DOMContentLoaded", function () {
-    const loginForm = document.querySelector("#login-form form");
-
-    loginForm.addEventListener("submit", function (e) {
-        e.preventDefault(); // Stop form reload
-
-        const email = loginForm.querySelector('input[type="email"]').value.trim();
-        const password = loginForm.querySelector('input[type="password"]').value.trim();
-
-        if (email === "" || password === "") {
-            alert("يرجى إدخال البريد الإلكتروني وكلمة المرور.");
-            return;
-        }
-
-        // For now, just redirect to the home page
-        window.location.href = "home_page.html";
-    });
-
-    // Switch between login and register forms
-    const showRegister = document.getElementById("show-register");
-    const showLogin = document.getElementById("show-login");
-    const loginCard = document.getElementById("login-form");
-    const registerCard = document.getElementById("register-form");
-
-    if (showRegister && showLogin) {
-        showRegister.addEventListener("click", function (e) {
-            e.preventDefault();
-            loginCard.classList.add("d-none");
-            registerCard.classList.remove("d-none");
-        });
-
-        showLogin.addEventListener("click", function (e) {
-            e.preventDefault();
-            registerCard.classList.add("d-none");
-            loginCard.classList.remove("d-none");
-        });
-    }
-});
-</script>
+    <script src="index-page.js"></script>
+    
 </body>
 </html>

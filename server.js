@@ -28,9 +28,12 @@ app.use(cors());
 
 // Allow server to read JSON data from requests
 app.use(bodyParser.json());
+app.use(express.json());
 
 // Allow server to read form data
 app.use(bodyParser.urlencoded({ extended: true }));
+app.use(express.urlencoded({ extended: true })); // optional for forms
+
 
 // =============================================
 // STEP 4: Setup Database
@@ -191,6 +194,7 @@ app.get('/', (req, res) => {
 // Data needed: name, email, phone, password
 // ---------------------------------------------
 app.post('/register', async (req, res) => {
+  console.log(req.body);
   // Get data from the form
   const { name, email, phone, password } = req.body;
 
