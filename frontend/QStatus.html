@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>طابور - حالة الطابور</title>
+
+  <!-- Bootstrap CSS -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.rtl.min.css" rel="stylesheet"/>
+  <!-- Bootstrap Icons -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" rel="stylesheet"/>
+  <!-- Alpine.js -->
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- Page CSS -->
+  <link href="QStyle.css" rel="stylesheet"/>
+</head>
+
+<body x-data="QStatusPage()">
+  <header class="header-gradient text-white py-3">
+    <div class="container d-flex justify-content-between align-items-center">
+      <h2 class="m-0"><i class="bi bi-clock-history me-2"></i> طابور</h2>
+      <p class="m-0">حالة الطابور</p>
+    </div>
+  </header>
+
+  <main class="container mt-4">
+    <div class="card mb-3">
+      <div class="card-body">
+        <h4 class="mb-1" x-text="data.business.name || 'مزود الخدمة'"></h4>
+        <p class="text-muted mb-0"><i class="bi bi-geo-alt"></i> <span x-text="data.business.address || '...'"></span></p>
+      </div>
+    </div>
+
+    <div class="row g-3 mb-2">
+      <div class="col-sm-4">
+        <div class="stat-card">
+          <div class="label">موقعك في الطابور</div>
+          <div class="value" x-text="'#' + data.queue.position"></div>
+        </div>
+      </div>
+      <div class="col-sm-4">
+        <div class="stat-card">
+          <div class="label">عدد المنتظرين</div>
+          <div class="value" x-text="data.queue.totalPeople"></div>
+        </div>
+      </div>
+      <div class="col-sm-4">
+        <div class="stat-card">
+          <div class="label">الوقت المتوقع</div>
+          <div class="value" x-text="data.queue.estMinutes + ' دقيقة'"></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <div class="progress-caption">جاري التقدم<span class="dots" x-text="dots"></span></div>
+      <div class="badge bg-light text-dark">قيد المعالجة</div>
+    </div>
+
+    <!-- Remove Bootstrap stripes/animation classes -->
+    <div class="progress position-relative mb-4">
+      <div class="progress-bar" role="progressbar"
+           :style="{ width: progress + '%' }"
+           aria-valuemin="0" aria-valuemax="100"></div>
+      <div class="progress-center" x-text="Math.floor(progress) + '% مكتمل'"></div>
+    </div>
+
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="mb-3">خدماتك المختارة</h5>
+        <template x-for="s in data.services" :key="s.id">
+          <div class="d-flex justify-content-between border-bottom py-2">
+            <span x-text="s.name"></span>
+            <span class="fw-bold" x-text="s.price + ' ريال'"></span>
+          </div>
+        </template>
+        <div class="d-flex justify-content-between pt-3">
+          <span class="fw-bold">الإجمالي (شامل الضريبة)</span>
+          <span class="fw-bold text-primary" x-text="data.totals.totalWithTax + ' ريال'"></span>
+        </div>
+      </div>
+    </div>
+
+    <div class="d-grid gap-2">
+      <!-- Appears only when progress hits 100% -->
+      <button class="btn btn-done btn-done-appear" x-show="progress >= 100" @click="confirmDone">تم</button>
+
+      <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#leaveModal">
+        مغادرة الطابور
+      </button>
+    </div>
+  </main>
+
+  <!-- Leave confirmation modal (Arabic) -->
+  <div class="modal fade" id="leaveModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content p-2">
+        <div class="modal-header">
+          <h5 class="modal-title">هل أنت متأكد أنك تريد مغادرة الطابور؟</h5>
+          <button type="button" class="btn-close ms-0" data-bs-dismiss="modal" aria-label="إغلاق"></button>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">عودة</button>
+          <button type="button" class="btn btn-danger" @click="confirmLeave">نعم، أنا متأكد من المغادرة</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+  <!-- Page JS -->
+  <script src="QStatus.js"></script>
+</body>
+</html>

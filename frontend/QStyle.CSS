@@ -1,0 +1,101 @@
+/* Gradient header */
+.header-gradient {
+  background: linear-gradient(135deg, #2196F3 0%, #00BCD4 100%);
+  color: white;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+}
+
+/* ===== Stat Cards ===== */
+.stat-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+}
+.stat-card .label {
+  color: #667085;
+  font-size: 0.9rem;
+  margin-bottom: 6px;
+}
+.stat-card .value {
+  font-size: 1.4rem;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+/* ===== Progress Bar (visible gradient) ===== */
+.progress {
+  height: 22px;
+  background-color: #eef7ff; /* light track */
+  border-radius: 14px;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Force visible single color (no stripes) */
+.progress-bar {
+  background: linear-gradient(90deg, #33cc99 0%, #66ccff 100%) !important;
+  transition: width 0.4s ease;
+  height: 100%;
+  border-radius: inherit;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+/* Centered percentage text */
+.progress-center {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  text-align: center;
+  line-height: 22px;
+  font-weight: 700;
+  color: #08415c;
+}
+
+/* Caption above (top-left) */
+.progress-caption {
+  color: #2f3d4a;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.dots {
+  font-weight: bold;
+  font-size: 1.1rem;
+  letter-spacing: 1px;
+}
+
+/* ===== Done Button (تم) ===== */
+.btn-done {
+  background: linear-gradient(135deg, #4caf50 0%, #81c784 100%);
+  color: white;
+  border: none;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 10px 20px;
+  transition: all 0.3s ease;
+}
+.btn-done:hover {
+  background: linear-gradient(135deg, #43a047 0%, #66bb6a 100%);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+  transform: translateY(-1px);
+}
+.btn-done-appear {
+  animation: fadeInUp 0.8s ease forwards;
+}
+@keyframes fadeInUp {
+  0% { opacity: 0; transform: translateY(10px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
+/* ===== Divider & total box spacing ===== */
+hr {
+  border-color: #ddd;
+  opacity: 0.5;
+  margin-top: 8px;
+  margin-bottom: 8px;
+}
+
+/* ===== Responsive tweaks ===== */
+@media (max-width: 768px) {
+  .stat-card .value { font-size: 1.25rem; }
+}

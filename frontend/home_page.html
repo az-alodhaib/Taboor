@@ -1,25 +1,20 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>طابور - اختر مزود الخدمة</title>
 
-  <!-- Bootstrap CSS -->
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.rtl.min.css" rel="stylesheet">
-
-  <!-- Bootstrap Icons -->
-  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" rel="stylesheet">
-
+  <!-- Bootstrap -->
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.rtl.min.css" rel="stylesheet"/>
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" rel="stylesheet"/>
   <!-- Alpine.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
-
   <!-- Custom CSS -->
-  <link href="home-style.css" rel="stylesheet">
+  <link href="home-style.css" rel="stylesheet"/>
 </head>
 
 <body x-data="HomePage()">
-  <!-- Header -->
   <header class="header-gradient text-white py-3">
     <div class="container d-flex justify-content-between align-items-center">
       <h2 class="m-0"><i class="bi bi-clock-history me-2"></i> طابور</h2>
@@ -28,14 +23,11 @@
   </header>
 
   <main class="container mt-4">
-
-    <!-- =========================
-         Section 1: Businesses List
-    ========================== -->
+    <!-- Business List -->
     <section x-show="view === 'businesses'" x-transition>
       <h3 class="mb-3">اختر مقدم الخدمة</h3>
 
-      <!-- Category Dropdown -->
+      <!-- Category -->
       <div class="card mb-3">
         <div class="card-body">
           <label class="form-label">نوع الخدمة</label>
@@ -43,7 +35,6 @@
             <option value="">اختر نوع الخدمة...</option>
             <option value="barber">صالون حلاقة</option>
             <option value="carwash">غسيل سيارات</option>
-            <option value="restaurant">مطعم</option>
           </select>
         </div>
       </div>
@@ -58,7 +49,7 @@
         </div>
       </div>
 
-      <!-- Google Map Placeholder -->
+      <!-- Map Placeholder -->
       <div class="card mb-4">
         <div class="map-placeholder">
           <i class="bi bi-map display-3 text-muted"></i>
@@ -69,76 +60,102 @@
 
       <!-- Business Cards -->
       <div id="business-list">
-        <template x-for="business in filteredBusinesses" :key="business.id">
+        <template x-for="b in filteredBusinesses" :key="b.id">
           <div class="provider-card">
             <div class="provider-header">
               <div>
-                <h5 class="provider-name" x-text="business.name"></h5>
+                <h5 class="provider-name" x-text="b.name"></h5>
                 <p class="text-muted mb-0">
-                  <i class="bi bi-geo-alt"></i>
-                  <span x-text="business.address"></span>
+                  <i class="bi bi-geo-alt"></i> <span x-text="b.address"></span>
                 </p>
               </div>
               <div class="text-warning fw-bold">
                 <i class="bi bi-star-fill"></i>
-                <span x-text="business.rating"></span>
+                <span x-text="b.rating"></span>
               </div>
             </div>
 
             <div class="provider-info">
-              <div class="info-item"><i class="bi bi-pin-map-fill"></i> <span x-text="business.distance + ' كم'"></span></div>
-              <div class="info-item"><i class="bi bi-telephone"></i> <span x-text="business.phone"></span></div>
+              <div class="info-item"><i class="bi bi-pin-map-fill"></i> <span x-text="b.distance + ' كم'"></span></div>
+              <div class="info-item"><i class="bi bi-telephone"></i> <span x-text="b.phone"></span></div>
             </div>
 
-            <button class="select-btn w-100" @click="showServices(business)">
+            <!-- Queue Info -->
+            <div class="text-muted small mb-2">
+              <i class="bi bi-people"></i> أمامك <b x-text="b.queuePeople + ' أشخاص'"></b>
+              <span class="mx-2">|</span>
+              <i class="bi bi-person-badge"></i> موقعك: <b x-text="'#' + b.queuePosition"></b>
+            </div>
+
+            <!-- Wait Time -->
+            <div class="small text-primary fw-semibold mb-3">
+              ⏱️ وقت الانتظار التقريبي: <span x-text="b.waitTime + ' دقيقة'"></span>
+            </div>
+
+            <button class="select-btn w-100" @click="showServices(b)">
               عرض الخدمات
             </button>
           </div>
         </template>
-
-        <!-- Empty State -->
-        <div class="empty-state" x-show="filteredBusinesses.length === 0">
-          <i class="bi bi-inbox display-4"></i>
-          <p>لا يوجد مزودين مطابقين</p>
-        </div>
       </div>
     </section>
 
-    <!-- =========================
-         Section 2: Services for Business
-    ========================== -->
+    <!-- Services -->
     <section x-show="view === 'services'" x-transition>
       <button class="btn btn-outline-secondary mb-3" @click="view = 'businesses'">
         <i class="bi bi-arrow-right"></i> العودة
       </button>
 
+      <!-- Business Info -->
       <div class="card mb-3">
         <div class="card-body">
           <h4 class="mb-0" x-text="selectedBusiness.name"></h4>
           <p class="text-muted mb-1"><i class="bi bi-geo-alt"></i> <span x-text="selectedBusiness.address"></span></p>
           <p class="text-warning"><i class="bi bi-star-fill"></i> <span x-text="selectedBusiness.rating"></span></p>
+
+          <div class="text-muted small">
+            <i class="bi bi-people"></i> أمامك
+            <b x-text="selectedBusiness.queuePeople + ' أشخاص'"></b>
+            <span class="mx-2">|</span>
+            <i class="bi bi-person-badge"></i> موقعك:
+            <b x-text="'#' + selectedBusiness.queuePosition"></b>
+            <br>
+            <span class="text-primary">⏱️ وقت الانتظار التقريبي: <b x-text="selectedBusiness.waitTime + ' دقيقة'"></b></span>
+          </div>
         </div>
       </div>
 
+      <!-- Services List -->
       <h5 class="mb-3">الخدمات المتاحة</h5>
-
-      <template x-for="service in businessServices" :key="service.id">
+      <template x-for="s in businessServices" :key="s.id">
         <div class="card mb-2 p-3 d-flex flex-row justify-content-between align-items-center service-card">
-          <div>
-            <input type="checkbox" x-model="service.selected" class="form-check-input me-2" @change="updateTotal">
-            <strong x-text="service.name"></strong>
-            <p class="service-duration mb-0">
-              <i class="bi bi-clock"></i> <span x-text="service.duration_minutes + ' دقيقة'"></span>
-            </p>
+          <div class="d-flex align-items-start gap-2">
+            <input type="checkbox" x-model="s.selected" class="form-check-input mt-1" @change="updateTotals">
+            <div>
+              <strong x-text="s.name"></strong>
+              <p class="service-duration mb-1">
+                <i class="bi bi-clock"></i>
+                <span x-text="s.duration_minutes + ' دقيقة'"></span>
+              </p>
+            </div>
           </div>
-          <span class="fw-bold" x-text="service.price + ' ريال'"></span>
+          <span class="fw-bold" x-text="s.price + ' ريال'"></span>
         </div>
       </template>
 
-      <!-- Total Price Box -->
+      <!-- Total Box -->
       <div class="card total-box mt-4 mb-3 p-3">
-        <h5 class="mb-0">المجموع الكلي (شامل الضريبة 15%)</h5>
-        <p class="total-amount mt-2 mb-0 fw-bold" x-text="totalWithTax + ' ريال'"></p>
+        <div class="d-flex flex-column">
+          <div class="fw-bold">الإجمالي (شامل الضريبة 15%): 
+            <span class="text-primary" x-text="totalWithTax + ' ريال'"></span>
+          </div>
+          <hr class="my-2 opacity-50" style="border-top: 1px solid #ddd;">
+          <div class="mt-1">
+            <i class="bi bi-clock"></i> 
+            وقت الانتظار التقريبي: 
+            <b x-text="selectedBusiness.waitTime + ' دقيقة'"></b>
+          </div>
+        </div>
       </div>
 
       <div class="d-grid mt-3">
@@ -147,13 +164,9 @@
         </button>
       </div>
     </section>
-
   </main>
 
-  <!-- Bootstrap JS -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
-
-  <!-- Custom JS -->
   <script src="home-page.js"></script>
 </body>
 </html>
