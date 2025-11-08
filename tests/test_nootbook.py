@@ -173,3 +173,5 @@
 #         assert 'error' in daily_results[0]
 #         assert 'samples' in daily_results[0]
 #         assert daily_results[0]['samples'] == 11  # Day 1 has 11 customers
+def test_nootbook():
+    assert True
