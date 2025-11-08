@@ -10,7 +10,6 @@ jobs:
           name: Validate Python syntax
           command: |
             echo "=== PYTHON SYNTAX VALIDATION ==="
-            # Skip node_modules and only check your project files
             python_files=$(find . -name "*.py" -type f -not -path "./node_modules/*")
             if [ -z "$python_files" ]; then
               echo "ℹ️ No Python files found"
@@ -19,21 +18,13 @@ jobs:
             echo "Checking Python files:"
             error_found=false
             for file in $python_files; do
-              # Use a more lenient Python check that handles incomplete files
-              if python -c "
-              try:
-                  with open('$file', 'r') as f:
-                      content = f.read()
-                  # Skip empty files or files with only comments
-                  if content.strip() and not content.strip().startswith('#'):
-                      compile(content, '$file', 'exec')
-                  print('✅ $file - Syntax OK')
-              except Exception as e:
-                  print('❌ SYNTAX ERROR in: $file -', str(e))
-                  exit(1)
-              "; then
-                : # Do nothing - check passed
+              # SIMPLE Python syntax check without complex indentation
+              if python -m py_compile "$file" 2>/dev/null; then
+                echo "✅ $file - Syntax OK"
               else
+                echo "❌ SYNTAX ERROR in: $file"
+                # Show the actual error
+                python -m py_compile "$file" 2>&1 | head -5
                 error_found=true
               fi
             done
@@ -86,11 +77,9 @@ jobs:
           name: Run Python tests
           command: |
             echo "=== PYTHON UNIT TESTS ==="
-            # Find and run Python test files
             python_test_files=$(find . -name "test_*.py" -type f -not -path "./node_modules/*")
             if [ -z "$python_test_files" ]; then
               echo "⚠️ No Python test files found"
-              # Create a basic passing test to avoid failure
               mkdir -p tests
               echo 'def test_basic(): assert True' > tests/test_basic.py
               python_test_files="tests/test_basic.py"
@@ -111,11 +100,9 @@ jobs:
           name: Run JavaScript tests
           command: |
             echo "=== JAVASCRIPT UNIT TESTS ==="
-            # Find and run JavaScript test files
             js_test_files=$(find . -name "test_*.js" -type f -not -path "./node_modules/*")
             if [ -z "$js_test_files" ]; then
               echo "⚠️ No JavaScript test files found"
-              # Create a basic passing test to avoid failure
               mkdir -p tests
               echo 'console.log("JavaScript tests passed")' > tests/test_basic.js
               js_test_files="tests/test_basic.js"
