@@ -1,8 +1,5 @@
 version: 2.1
 
-orbs:
-  python: circleci/python@2.1.1
-
 jobs:
   validate-syntax:
     docker:
@@ -14,11 +11,14 @@ jobs:
           name: Validate Python syntax
           command: |
             echo "=== PYTHON SYNTAX VALIDATION ==="
-            python_files=$(find . -name "*.py" -type f)
+            # IGNORE node_modules and only check YOUR Python files
+            python_files=$(find . -name "*.py" -type f -not -path "./node_modules/*")
             if [ -z "$python_files" ]; then
               echo "ℹ️ No Python files found"
               exit 0
             fi
+            echo "Checking Python files:"
+            echo "$python_files"
             error_found=false
             for file in $python_files; do
               if python -c "import ast; ast.parse(open('$file').read())" 2>/dev/null; then
@@ -36,11 +36,14 @@ jobs:
           name: Validate JavaScript syntax
           command: |
             echo "=== JAVASCRIPT SYNTAX VALIDATION ==="
-            js_files=$(find . -name "*.js" -type f)
+            # IGNORE node_modules and only check YOUR JavaScript files
+            js_files=$(find . -name "*.js" -type f -not -path "./node_modules/*")
             if [ -z "$js_files" ]; then
               echo "ℹ️ No JavaScript files found"
               exit 0
             fi
+            echo "Checking JavaScript files:"
+            echo "$js_files"
             error_found=false
             for file in $js_files; do
               if ! node -c "$file"; then
@@ -69,7 +72,7 @@ jobs:
           name: Run Python unit tests
           command: |
             echo "=== PYTHON UNIT TESTS ==="
-            python_test_files=$(find . -name "test_*.py" -type f)
+            python_test_files=$(find . -name "test_*.py" -type f -not -path "./node_modules/*")
             if [ -z "$python_test_files" ]; then
               echo "🚨 No Python test files found!"
               exit 1
@@ -79,12 +82,13 @@ jobs:
           name: Run JavaScript unit tests
           command: |
             echo "=== JAVASCRIPT UNIT TESTS ==="
-            js_test_files=$(find . -name "test_*.js" -type f)
+            js_test_files=$(find . -name "test_*.js" -type f -not -path "./node_modules/*")
             if [ -z "$js_test_files" ]; then
               echo "🚨 No JavaScript test files found!"
               exit 1
             fi
             for test_file in $js_test_files; do
+              echo "Running: $test_file"
               node "$test_file"
             done
 
