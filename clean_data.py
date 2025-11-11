@@ -19,3 +19,6 @@ def find_extreme_wait_times(data, threshold=240):
     stats = data['wait_time'].describe()
     extreme_waits = data[data['wait_time'] > threshold]
     return stats, len(extreme_waits)
+
+if __name__ == "__main__":
+    print("Data cleaning functions loaded")
