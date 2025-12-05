@@ -10,7 +10,8 @@ jobs:
           name: Validate Python syntax
           command: |
             echo "=== PYTHON SYNTAX VALIDATION ==="
-            python_files=$(find . -name "*.py" -type f -not -path "./node_modules/*")
+            # EXCLUDE env folder from the search - this is the key fix
+            python_files=$(find . -name "*.py" -type f -not -path "./env/*" -not -path "./node_modules/*")
             if [ -z "$python_files" ]; then
               echo "ℹ️ No Python files found"
               exit 0
