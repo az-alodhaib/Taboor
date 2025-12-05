@@ -7,19 +7,19 @@
 
 # class TestCleanData:
     
-    # def test_remove_duplicates(self):
-    #     duplicate_data = pd.DataFrame({
-    #         'arrival_time': ['15-12-2024 14.30', '15-12-2024 14.30', '16-12-2024 09.15'],
-    #         'start_time': ['15-12-2024 14.45', '15-12-2024 14.45', '16-12-2024 09.30'],
-    #         'finish_time': ['15-12-2024 15.00', '15-12-2024 15.00', '16-12-2024 09.50'],
-    #         'wait_time': [15, 15, 15],
-    #         'customer_id': [1, 1, 2]
-    #     })
+#     def test_remove_duplicates(self):
+#         duplicate_data = pd.DataFrame({
+#             'arrival_time': ['15-12-2024 14.30', '15-12-2024 14.30', '16-12-2024 09.15'],
+#             'start_time': ['15-12-2024 14.45', '15-12-2024 14.45', '16-12-2024 09.30'],
+#             'finish_time': ['15-12-2024 15.00', '15-12-2024 15.00', '16-12-2024 09.50'],
+#             'wait_time': [15, 15, 15],
+#             'customer_id': [1, 1, 2]
+#         })
         
-    #     result = remove_duplicates(duplicate_data)
+#         result = remove_duplicates(duplicate_data)
         
-    #     assert len(result) == 2
-    #     assert result['customer_id'].nunique() == 2
+#         assert len(result) == 2
+#         assert result['customer_id'].nunique() == 2
 
 #     def test_check_missing_values(self):
 #         test_data = pd.DataFrame({
@@ -173,5 +173,5 @@
 #         assert 'error' in daily_results[0]
 #         assert 'samples' in daily_results[0]
 #         assert daily_results[0]['samples'] == 11  # Day 1 has 11 customers
-def test_nootbook():
-    assert True
+# def test_nootbook():
+#     assert True
