@@ -1,0 +1,25 @@
+# .dockerignore
+
+*
+
+
+!main.py              
+!ML_model.py          
+!requirements.txt     
+!Dockerfile           
+!clean_data.py        
+!Nootbook.ipynb       
+!*.py                 
+
+
+!models/
+
+# BLOCK: Everything else
+queue_data.csv        
+env/                  
+tests/                
+__pycache__/          
+*.pyc                 
+*.ipynb_checkpoints   
+.DS_Store             
+*.log                 

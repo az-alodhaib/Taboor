@@ -145,6 +145,42 @@ db.run(`
   else     console.log('Queue Members table ready');
 });
 
+//  appointments
+db.run(`
+  CREATE TABLE IF NOT EXISTS appointments (
+    appointment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id INTEGER NOT NULL,  -- references businesses table
+    arrival_time DATETIME,
+    queue_length INTEGER,
+    service_type TEXT,
+    service_details TEXT,
+    predicted_wait INTEGER,  -- predicted wait time from ML model
+    actual_wait INTEGER,    -- to be filled later
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+  )
+`, (err) => {
+  if (err) console.error('Error creating appointments table:', err.message);
+  else     console.log('Appointments table ready');
+});
+
+//  historical_data
+db.run(`
+  CREATE TABLE IF NOT EXISTS historical_data (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    business_id INTEGER NOT NULL,  -- references businesses table
+    arrival_time DATETIME,
+    queue_length INTEGER,
+    service_type TEXT,
+    service_details TEXT,
+    wait_time INTEGER,  -- actual wait time
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (business_id) REFERENCES businesses(id)
+  )
+`, (err) => {
+  if (err) console.error('Error creating historical_data table:', err.message);
+  else     console.log('Historical Data table ready');
+});
 
 // STEP DATABASE
 // ---- Small DB helpers (Promise wrappers)
@@ -989,4 +1025,60 @@ process.on('SIGINT', () => {
     console.log('Database connection closed');
     process.exit(0);
   });
+});
+
+// GET & POST appointments
+app.post('/appointments', async (req, res) => {
+  const { business_id, arrival_time, queue_length, service_type, service_details, predicted_wait } = req.body;
+  if (!business_id || !arrival_time || !queue_length) return res.status(400).json({ error: 'Required fields missing' });
+
+  try {
+    const result = await runSQL(
+      `INSERT INTO appointments (business_id, arrival_time, queue_length, service_type, service_details, predicted_wait)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [business_id, arrival_time, queue_length, service_type, service_details, predicted_wait]
+    );
+    const appointment = await getSQL(`SELECT * FROM appointments WHERE appointment_id = ?`, [result.lastID]);
+    res.status(201).json({ message: 'Appointment created', appointment });
+  } catch {
+    res.status(500).json({ error: 'Failed to create appointment' });
+  }
+});
+
+
+app.get('/appointments', async (_req, res) => {
+  try {
+    const rows = await allSQL(`SELECT * FROM appointments ORDER BY created_at DESC`);
+    res.json({ appointments: rows });
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch appointments' });
+  }
+});
+
+
+// GET & POST historical_data
+app.post('/historical_data', async (req, res) => {
+  const { business_id, arrival_time, queue_length, service_type, service_details, wait_time } = req.body;
+  if (!business_id || !arrival_time || !queue_length) return res.status(400).json({ error: 'Required fields missing' });
+
+  try {
+    const result = await runSQL(
+      `INSERT INTO historical_data (business_id, arrival_time, queue_length, service_type, service_details, wait_time)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [business_id, arrival_time, queue_length, service_type, service_details, wait_time]
+    );
+    const historicalData = await getSQL(`SELECT * FROM historical_data WHERE id = ?`, [result.lastID]);
+    res.status(201).json({ message: 'Historical data created', historicalData });
+  } catch {
+    res.status(500).json({ error: 'Failed to create historical data' });
+  }
+});
+
+app.get('/historical_data', async (_req, res) => {
+  try {
+    const rows = await allSQL(`SELECT * FROM historical_data ORDER BY created_at DESC`);
+    res.json({ historical_data: rows });
+  } catch {
+    res.status(500).json({ error: 'Failed to fetch historical data' });
+  }
 });
