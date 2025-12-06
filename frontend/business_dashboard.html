@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>طابور - لوحة تحكم النشاط</title>
+
+  <!-- Bootstrap RTL -->
+  <link
+    href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.rtl.min.css"
+    rel="stylesheet"
+  />
+  <link
+    href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css"
+    rel="stylesheet"
+  />
+
+  <!-- Main shared styles in your project -->
+  <link href="home-style.css" rel="stylesheet" />
+  <!-- Dashboard-specific styles -->
+  <link href="business-dashboard.css" rel="stylesheet" />
+</head>
+
+<body>
+  <!-- self-note: top colored header -->
+  <header class="header-gradient text-white py-3">
+    <div class="container d-flex justify-content-between align-items-center">
+      <div>
+        <h2 class="m-0">طابور</h2>
+        <small>لوحة تحكم مزود الخدمة</small>
+        <p class="mb-0 mt-2">
+          مرحباً، <span id="business-name" class="fw-semibold"></span> 👋
+        </p>
+      </div>
+
+      <div class="text-end">
+        <div class="mb-2">
+          <small class="d-block">
+            الخدمة الحالية:
+            <span id="business-service" class="fw-semibold"></span>
+          </small>
+        </div>
+        <button id="logout-btn" class="btn btn-sm btn-outline-light">
+          <i class="bi bi-box-arrow-right ms-1"></i>
+          تسجيل الخروج
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <main class="container my-4">
+    <!-- Tabs -->
+    <ul class="nav nav-tabs mb-3" id="dashboardTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link active"
+          id="queue-tab"
+          data-bs-toggle="tab"
+          data-bs-target="#queue-panel"
+          type="button"
+          role="tab"
+        >
+          الطابور
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button
+          class="nav-link"
+          id="services-tab"
+          data-bs-toggle="tab"
+          data-bs-target="#services-panel"
+          type="button"
+          role="tab"
+        >
+          الخدمات
+        </button>
+      </li>
+    </ul>
+
+    <div class="tab-content" id="dashboardTabsContent">
+      <!-- ============== Queue Tab ============== -->
+      <div
+        class="tab-pane fade show active"
+        id="queue-panel"
+        role="tabpanel"
+        aria-labelledby="queue-tab"
+      >
+        <!-- Stats row -->
+        <div class="row g-3 mb-4">
+          <div class="col-md-3">
+            <div class="card stat-card-dashboard text-center">
+              <div class="card-body">
+                <div class="icon-circle mb-2">
+                  <i class="bi bi-megaphone"></i>
+                </div>
+                <div id="current-number" class="stat-value">-</div>
+                <div class="stat-label">الرقم الحالي قيد الخدمة</div>
+                <small class="text-muted d-block mt-2">
+                  متوسط الانتظار:
+                  <span id="avg-wait-time">-- دقيقة</span>
+                </small>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-3">
+            <div class="card stat-card-dashboard text-center">
+              <div class="card-body">
+                <div class="icon-circle mb-2">
+                  <i class="bi bi-people"></i>
+                </div>
+                <div id="waiting-count" class="stat-value">0</div>
+                <div class="stat-label">عدد المنتظرين</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-3">
+            <div class="card stat-card-dashboard text-center">
+              <div class="card-body">
+                <div class="icon-circle mb-2">
+                  <i class="bi bi-check-circle"></i>
+                </div>
+                <div id="served-count" class="stat-value">0</div>
+                <div class="stat-label">تم خدمتهم اليوم</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-md-3">
+            <div class="card stat-card-dashboard text-center">
+              <div class="card-body">
+                <div class="icon-circle mb-2">
+                  <i class="bi bi-x-circle"></i>
+                </div>
+                <div id="cancelled-count" class="stat-value">0</div>
+                <div class="stat-label">ملغاة اليوم</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Queue table -->
+        <section class="card mb-3">
+          <div class="card-body">
+            <h5 class="mb-3">طابور العملاء</h5>
+
+            <div id="empty-state" class="text-center text-muted py-4 d-none">
+              لا يوجد عملاء في الطابور حالياً.
+            </div>
+
+            <div class="table-responsive">
+              <table class="table align-middle mb-0">
+                <thead class="table-light">
+                  <tr>
+                    <th>الرقم</th>
+                    <th>اسم العميل</th>
+                    <th>الحالة</th>
+                    <th>وقت الانضمام</th>
+                    <th>وقت الخدمة</th>
+                  </tr>
+                </thead>
+                <tbody id="queue-members-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <!-- Bottom actions -->
+        <div class="mb-3">
+          <button id="btn-call-next" class="btn btn-gradient w-100">
+            <i class="bi bi-arrow-repeat ms-1"></i>
+            نداء العميل التالي
+          </button>
+        </div>
+      </div>
+
+      <!-- ============== Services Tab ============== -->
+      <div
+        class="tab-pane fade"
+        id="services-panel"
+        role="tabpanel"
+        aria-labelledby="services-tab"
+      >
+        <div class="row g-3">
+          <div class="col-lg-7">
+            <div class="card mb-3">
+              <div class="card-body">
+                <h5 class="mb-3">الخدمات الحالية</h5>
+                <ul id="services-list" class="list-unstyled mb-0"></ul>
+                <div
+                  id="services-empty"
+                  class="text-center text-muted py-3 d-none"
+                >
+                  لا توجد خدمات بعد.
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="col-lg-5">
+            <div class="card">
+              <div class="card-body">
+                <h5 class="mb-3">طلب إضافة خدمة جديدة</h5>
+                <form id="service-form">
+                  <div class="mb-2">
+                    <label class="form-label">اسم الخدمة</label>
+                    <input
+                      type="text"
+                      id="service-name"
+                      class="form-control form-control-sm"
+                    />
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label">المدة (بالدقائق)</label>
+                    <input
+                      type="number"
+                      id="service-duration"
+                      class="form-control form-control-sm"
+                    />
+                  </div>
+                  <div class="mb-2">
+                    <label class="form-label">السعر</label>
+                    <input
+                      type="number"
+                      id="service-price"
+                      class="form-control form-control-sm"
+                    />
+                  </div>
+                  <div class="mb-3">
+                    <label class="form-label">وصف الخدمة (اختياري)</label>
+                    <textarea
+                      id="service-description"
+                      class="form-control form-control-sm"
+                      rows="3"
+                    ></textarea>
+                  </div>
+                  <button type="submit" class="btn btn-primary w-100">
+                    إرسال طلب الخدمة
+                  </button>
+                  <small class="text-muted d-block mt-2">
+                    سيتم مراجعة الخدمة من قبل المشرف قبل ظهورها للزبائن.
+                  </small>
+                </form>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Bootstrap JS -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+  <!-- Dashboard logic -->
+  <script src="business-dashboard.js"></script>
+</body>
+</html>

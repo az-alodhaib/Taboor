@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <title>طابور - لوحة المشرف</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/css/bootstrap.rtl.min.css" rel="stylesheet" />
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" rel="stylesheet" />
+  <link href="home-style.css" rel="stylesheet" />
+  <link href="styles.css" rel="stylesheet" />
+</head>
+<body>
+  <header class="header-gradient text-white py-3 mb-4">
+    <div class="container d-flex justify-content-between align-items-center">
+      <div>
+        <h2 class="m-0">طابور</h2>
+        <small>لوحة المشرف</small>
+      </div>
+      <div>
+        <small class="d-block">إدارة المنشآت والخدمات</small>
+      </div>
+    </div>
+  </header>
+
+  <main class="container mb-5">
+    <ul class="nav nav-tabs mb-3" id="adminTabs" role="tablist">
+      <li class="nav-item" role="presentation">
+        <button class="nav-link active" id="business-tab" data-bs-toggle="tab"
+          data-bs-target="#business-panel" type="button" role="tab">
+          المنشآت
+        </button>
+      </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="service-tab" data-bs-toggle="tab"
+          data-bs-target="#service-panel" type="button" role="tab">
+          الخدمات
+        </button>
+      </li>
+    </ul>
+
+    <div class="tab-content" id="adminTabsContent">
+      <!-- Businesses tab -->
+      <div class="tab-pane fade show active" id="business-panel" role="tabpanel" aria-labelledby="business-tab">
+        <div id="admin-business-message" class="mb-3"></div>
+        <div id="admin-business-list" class="row g-3"></div>
+      </div>
+
+      <!-- Services tab -->
+      <div class="tab-pane fade" id="service-panel" role="tabpanel" aria-labelledby="service-tab">
+        <div id="admin-service-message" class="mb-3"></div>
+        <div id="admin-service-list" class="row g-3"></div>
+      </div>
+    </div>
+  </main>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+  <script src="admin.js"></script>
+</body>
+</html>

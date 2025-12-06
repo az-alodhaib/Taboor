@@ -1,126 +1,228 @@
+// ==========================
+// Configurations
+// ==========================
+
+const API_BASE = "http://localhost:3000";
+
+// Set tax rate here once; currently 15%
+const TAX_RATE = 0.15;
+
+
+// ==========================
+// Data Models
+// ==========================
+
 class Business {
-  constructor({ id, name, category, address, phone, distance, rating, queuePeople, queuePosition, waitTime }) {
-    Object.assign(this, { id, name, category, address, phone, distance, rating, queuePeople, queuePosition, waitTime });
+  constructor({ id, name, category, address, phone, distance, rating, queuePeople, queuePosition, waitTimeMinutes }) {
+    this.id = id;
+    this.name = name;
+    this.category = category || "";
+    this.address = address || "";
+    this.phone = phone || "";
+    this.distance = distance || 0;
+    this.rating = rating || 0;
+    this.queuePeople = queuePeople || 0;
+    this.queuePosition = queuePosition || 1;
+    this.waitTimeMinutes = waitTimeMinutes || 0;
   }
 }
 
 class Service {
   constructor({ id, business_id, name, duration_minutes, price }) {
-    Object.assign(this, { id, business_id, name, duration_minutes, price });
-    this.selected = false;
+    this.id = id;
+    this.business_id = business_id;
+    this.name = name;
+    this.duration_minutes = duration_minutes || 0;
+    this.price = price || 0;
+    this.selected = false; // default: not selected
   }
 }
 
+
+// ==========================
+// Alpine.js Component
+// ==========================
+
 function HomePage() {
   return {
-    view: 'businesses',
-    selectedCategory: '',
-    searchQuery: '',
-    selectedBusiness: null,
-    businessServices: [],
-    totalWithTax: '0.00',
+    // State variables
+    view: "businesses", // can be "businesses" or "services"
+    selectedCategory: "",
+    searchQuery: "",
+    loading: false,
+    errorMessage: "",
+    businesses: [],              // list of Business objects
+    selectedBusiness: null,      // currently chosen business
+    businessServices: [],        // services for the selected business
+    totalWithTax: "0.00",        // total price including tax
 
-    // ✅ Static businesses and wait times
-    businesses: [
-      new Business({
-        id: 1,
-        name: 'صالون النخبة',
-        category: 'barber',
-        address: 'حي الملز',
-        phone: '0500000001',
-        distance: 1.2,
-        rating: 4.6,
-        queuePeople: 4,
-        queuePosition: 5,
-        waitTime: 22
-      }),
-      new Business({
-        id: 2,
-        name: 'قصات راقية',
-        category: 'barber',
-        address: 'الصحافة',
-        phone: '0500000002',
-        distance: 0.9,
-        rating: 4.8,
-        queuePeople: 2,
-        queuePosition: 3,
-        waitTime: 18
-      }),
-      new Business({
-        id: 3,
-        name: 'غسيل برو',
-        category: 'carwash',
-        address: 'العليا',
-        phone: '0500000003',
-        distance: 2.1,
-        rating: 4.4,
-        queuePeople: 6,
-        queuePosition: 7,
-        waitTime: 28
-      })
-    ],
+    // Initialization
+    async init() {
+      // Load businesses at the start
+      await this.loadBusinesses();
+    },
 
-    // ✅ Services without “expected wait” per service
-    servicesAll: [
-      new Service({ id: 1, business_id: 1, name: 'قص شعر', duration_minutes: 30, price: 25 }),
-      new Service({ id: 2, business_id: 1, name: 'تحديد لحية', duration_minutes: 15, price: 15 }),
-      new Service({ id: 3, business_id: 2, name: 'تصفيف شعر', duration_minutes: 20, price: 18 }),
-      new Service({ id: 4, business_id: 3, name: 'غسيل خارجي', duration_minutes: 25, price: 30 }),
-      new Service({ id: 5, business_id: 3, name: 'غسيل شامل', duration_minutes: 40, price: 45 })
-    ],
+    // Load businesses from the backend
+    async loadBusinesses() {
+      this.loading = true;
+      this.errorMessage = "";
 
+      try {
+        const response = await fetch(`${API_BASE}/businesses`);
+        const json = await response.json();
+
+        if (!response.ok) throw new Error(json.error || "فشل في تحميل المنشآت");
+
+        // Convert each row to a Business object
+        this.businesses = json.businesses.map((row, index) => new Business({
+          ...row,
+          // Placeholder values for distance/rating if not in DB
+          distance: 1 + index * 0.5,
+          rating: 4.5
+        }));
+      } catch (error) {
+        console.error(error);
+        this.errorMessage = error.message || "حدث خطأ غير متوقع";
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    // Filtered list of businesses based on category and search query
     get filteredBusinesses() {
+      const query = this.searchQuery.trim();
       return this.businesses.filter(b => {
-        const catOk = this.selectedCategory ? b.category === this.selectedCategory : true;
-        const q = this.searchQuery.trim();
-        const sOk = q ? (b.name.includes(q) || b.address.includes(q)) : true;
-        return catOk && sOk;
+        const matchesCategory = this.selectedCategory ? b.category === this.selectedCategory : true;
+        const matchesSearch = query ? b.name.includes(query) || (b.address || "").includes(query) : true;
+        return matchesCategory && matchesSearch;
       });
     },
 
-    filterBusinesses() {},
+    // When a business card is clicked
+    async showServices(business) {
+      this.selectedBusiness = business;
+      this.view = "services";
+      this.totalWithTax = "0.00";
+      this.businessServices = [];
 
-    showServices(b) {
-      this.selectedBusiness = b;
-      this.businessServices = this.servicesAll
-        .filter(s => s.business_id === b.id)
-        .map(s => new Service({ ...s })); // reset selected state
-      this.totalWithTax = '0.00';
-      this.view = 'services';
+      // Load services and queue info in parallel
+      await Promise.all([
+        this.loadServicesForBusiness(business.id),
+        this.loadQueueInfoForBusiness(business)
+      ]);
+
+      this.updateTotals();
     },
 
+    // Load services for a specific business
+    async loadServicesForBusiness(businessId) {
+      try {
+        const response = await fetch(`${API_BASE}/businesses/${businessId}/services`);
+        const json = await response.json();
+
+        if (!response.ok) throw new Error(json.error || "فشل في تحميل الخدمات");
+
+        // Convert to Service objects
+        this.businessServices = json.services.map(row => new Service(row));
+      } catch (error) {
+        console.error(error);
+        alert(error.message || "حدث خطأ أثناء تحميل الخدمات");
+      }
+    },
+
+    // Load queue information for the selected business
+    async loadQueueInfoForBusiness(business) {
+      try {
+        // Get queues for the business
+        const queuesRes = await fetch(`${API_BASE}/businesses/${business.id}/queues`);
+        const queuesJson = await queuesRes.json();
+        if (!queuesRes.ok) throw new Error(queuesJson.error || "فشل في تحميل معلومات الطابور");
+
+        const queues = queuesJson.queues || [];
+        if (queues.length === 0) {
+          // If no queues, reset queue data
+          business.queuePeople = 0;
+          business.queuePosition = 1;
+          business.waitTimeMinutes = 0;
+          return;
+        }
+
+        // Use the first open queue or the first available queue
+        const activeQueue = queues.find(q => q.status === "open") || queues[0];
+
+        // Get queue overview
+        const overviewRes = await fetch(`${API_BASE}/queues/${activeQueue.id}/overview`);
+        const overviewJson = await overviewRes.json();
+        if (!overviewRes.ok) throw new Error(overviewJson.error || "فشل في قراءة ملخص الطابور");
+
+        const stats = overviewJson.stats || {};
+        const waitingCount = Number(stats.waiting || 0);
+        const calledCount = Number(stats.called || 0);
+        const peopleInLine = waitingCount + calledCount;
+
+        // Update business queue info
+        business.queuePeople = peopleInLine;
+        business.queuePosition = peopleInLine + 1; // If joining now, they are last
+        business.waitTimeMinutes = Number(overviewJson.estimated_wait_minutes || 0);
+      } catch (error) {
+        console.error(error);
+        // On error, keep existing values or set defaults
+        business.queuePeople = business.queuePeople || 0;
+        business.queuePosition = business.queuePosition || 1;
+        business.waitTimeMinutes = business.waitTimeMinutes || 0;
+      }
+    },
+
+    // Update total cost including tax
     updateTotals() {
-      const picked = this.businessServices.filter(s => s.selected);
-      const subtotal = picked.reduce((sum, s) => sum + s.price, 0);
-      this.totalWithTax = subtotal.toFixed(2);
+      const selectedServices = this.businessServices.filter(s => s.selected);
+      const subtotal = selectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+      const total = subtotal * (1 + TAX_RATE);
+      this.totalWithTax = total.toFixed(2); // keep two decimal places
     },
 
+    // Confirm selection and proceed
     confirmSelection() {
-      const picked = this.businessServices.filter(s => s.selected);
-      if (picked.length === 0) {
-        alert('يرجى اختيار خدمة واحدة على الأقل');
+      if (!this.selectedBusiness) {
+        alert("الرجاء اختيار مزود خدمة أولاً.");
         return;
       }
 
+      const chosenServices = this.businessServices.filter(s => s.selected);
+      if (chosenServices.length === 0) {
+        alert("الرجاء اختيار خدمة واحدة على الأقل.");
+        return;
+      }
+
+      const b = this.selectedBusiness;
+
       const payload = {
         business: {
-          id: this.selectedBusiness.id,
-          name: this.selectedBusiness.name,
-          address: this.selectedBusiness.address
+          id: b.id,
+          name: b.name,
+          address: b.address,
+          phone: b.phone
         },
-        services: picked.map(p => ({ id: p.id, name: p.name, price: p.price })),
+        services: chosenServices.map(s => ({
+          id: s.id,
+          name: s.name,
+          price: s.price,
+          duration_minutes: s.duration_minutes
+        })),
         totals: {
+          taxRate: TAX_RATE,
           totalWithTax: this.totalWithTax
         },
         queue: {
-          position: this.selectedBusiness.queuePosition,
-          totalPeople: this.selectedBusiness.queuePeople,
-          estMinutes: this.selectedBusiness.waitTime // unified wait time
+          position: b.queuePosition,
+          totalPeople: b.queuePeople,
+          estMinutes: b.waitTimeMinutes
         }
       };
 
-      localStorage.setItem('queueStatus', JSON.stringify(payload));
-      window.location.href = 'QStatus.html';
+      // Save to localStorage so the QStatus page can read it
+      localStorage.setItem("queueStatus", JSON.stringify(payload));
+      window.location.href = "QStatus.html";
     }
   };
 }

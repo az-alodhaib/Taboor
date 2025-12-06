@@ -1,0 +1,116 @@
+/* self-note: small dashboard-specific styles.
+   Shared fonts / gradient come from home-style.css */
+
+/* Stats cards */
+.stat-card-dashboard {
+  border-radius: 12px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.06);
+  border: none;
+}
+
+.stat-card-dashboard .stat-value {
+  font-size: 1.6rem;
+  font-weight: 700;
+}
+
+.stat-card-dashboard .stat-label {
+  font-size: 0.85rem;
+  color: #777;
+}
+
+.icon-circle {
+  width: 40px;
+  height: 40px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.25);
+}
+
+.icon-circle i {
+  font-size: 1.2rem;
+}
+
+/* self-note: gradient button (reuse if same class name exists) */
+.btn-gradient {
+  background: linear-gradient(135deg, #6366f1, #22c55e);
+  border: none;
+  color: #fff;
+  font-weight: 600;
+}
+
+.btn-gradient:hover {
+  opacity: 0.9;
+  color: #fff;
+}
+
+/* Queue table */
+#queue-panel table th,
+#queue-panel table td {
+  font-size: 0.9rem;
+}
+
+#queue-panel table tbody tr:nth-child(even) {
+  background-color: #f9fafb;
+}
+
+/* Status labels in table (optional, if you add classes) */
+.badge-status-waiting {
+  background-color: #fff8e1;
+  color: #f9a825;
+}
+
+.badge-status-serving {
+  background-color: #e3f2fd;
+  color: #1565c0;
+}
+
+.badge-status-served {
+  background-color: #e8f5e9;
+  color: #2e7d32;
+}
+
+.badge-status-cancelled {
+  background-color: #ffebee;
+  color: #c62828;
+}
+
+/* Tabs look */
+.nav-tabs .nav-link {
+  font-size: 0.95rem;
+}
+
+/* Services list items */
+.services-list-item {
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background-color: #ffffff;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.services-list-item-title {
+  font-weight: 600;
+}
+
+.services-list-item-meta {
+  font-size: 0.85rem;
+  color: #6b7280;
+}
+
+/* Mobile tweaks */
+@media (max-width: 768px) {
+  .stat-card-dashboard {
+    margin-bottom: 0.5rem;
+  }
+
+  .services-list-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 4px;
+  }
+}
