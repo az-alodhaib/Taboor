@@ -70,24 +70,24 @@ db.run(`
 // STEP DATABASE
 // ===== New DB tables: businesses / services / queues / queue_members =====
 // Simple schema for providers, their services, queues, and queue members.
-
 db.run(`
   CREATE TABLE IF NOT EXISTS businesses (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,           -- provider name
-    category TEXT,                -- e.g. Barber, Car Wash
+    name TEXT NOT NULL,               -- business name
+    email TEXT UNIQUE NOT NULL,       -- business login email
+    password TEXT NOT NULL,           -- business hashed password
+    category TEXT,                    -- e.g. Barber, Car Wash
     address TEXT,
     latitude REAL,
     longitude REAL,
     phone TEXT,
-    owner_user_id INTEGER,        -- optional link to users.id
-    is_active INTEGER DEFAULT 1,  -- 1 active, 0 inactive
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (owner_user_id) REFERENCES users(id)
+    is_active INTEGER NOT NULL DEFAULT 0
+        CHECK (is_active IN (-1,0,1)), -- 0=pending,1=approved,-1=rejected
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `, (err) => {
   if (err) console.error('Error creating businesses table:', err.message);
-  else     console.log('Businesses table ready');
+  else     console.log('Businesses table ready with email + password');
 });
 
 // STEP DATABASE
@@ -314,24 +314,121 @@ app.get('/users', (req, res) => {
 // STEP DATABASE
 // ---------- Businesses ----------
 
-// POST /business/register
-// Create a new business (provider). Required: name.
+// BUSINESS REGISTER – uses businesses.email + businesses.password
 app.post('/business/register', async (req, res) => {
-  const { name, category, address, latitude, longitude, phone, owner_user_id } = req.body;
-  if (!name) return res.status(400).json({ error: 'Business name is required' });
+  const {
+    name,
+    email,
+    password,
+    category,
+    address,
+    latitude,
+    longitude,
+    phone
+  } = req.body;
+
+  // simple required fields check
+  if (!name || !email || !password) {
+    return res.status(400).json({
+      error: 'Business name, email, and password are required'
+    });
+  }
 
   try {
+    // hash password before saving
+    const hashedPassword = await bcrypt.hash(password, 10);
+
     const result = await runSQL(
-      `INSERT INTO businesses (name, category, address, latitude, longitude, phone, owner_user_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [name, category, address, latitude, longitude, phone, owner_user_id || null]
+      `INSERT INTO businesses (
+         name,
+         email,
+         password,
+         category,
+         address,
+         latitude,
+         longitude,
+         phone,
+         is_active
+       )
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+      [
+        name,
+        email,
+        hashedPassword,
+        category,
+        address,
+        latitude,
+        longitude,
+        phone
+      ]
     );
-    const business = await getSQL(`SELECT * FROM businesses WHERE id = ?`, [result.lastID]);
-    res.status(201).json({ message: 'Business created', business });
-  } catch {
-    res.status(500).json({ error: 'Failed to create business' });
+
+    return res.status(201).json({
+      message: 'Business created (pending)',
+      business_id: result.lastID
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'Failed to create business' });
   }
 });
+
+// BUSINESS LOGIN – checks email + password from businesses table
+app.post('/business/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) {
+    return res.status(400).json({
+      error: 'يرجى إدخال البريد الإلكتروني وكلمة المرور'
+    });
+  }
+
+  try {
+    // find business by email
+    const business = await getSQL(
+      `SELECT * FROM businesses WHERE email = ?`,
+      [email]
+    );
+
+    if (!business) {
+      return res.status(401).json({
+        error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة'
+      });
+    }
+
+    // compare password
+    const match = await bcrypt.compare(password, business.password);
+    if (!match) {
+      return res.status(401).json({
+        error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة'
+      });
+    }
+
+    // map is_active to status
+    let status;
+    if (business.is_active === 1) status = 'approved';
+    else if (business.is_active === 0) status = 'pending';
+    else if (business.is_active === -1) status = 'rejected';
+    else status = 'unknown';
+
+    return res.json({
+      status,
+      business: {
+        id: business.id,
+        name: business.name,
+        email: business.email,
+        category: business.category,
+        is_active: business.is_active
+      }
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: 'خطأ في الخادم' });
+  }
+});
+
+
+
 
 // STEP DATABASE
 // GET /businesses
@@ -349,38 +446,58 @@ app.get('/businesses', async (_req, res) => {
 // ---------- Services ----------
 
 // POST /services
-// Add a service to a business. Required: business_id, name.
+// Add a service for a business as "pending" (is_active = 0).
 app.post('/services', async (req, res) => {
   const { business_id, name, description, duration_minutes, price } = req.body;
   if (!business_id || !name) return res.status(400).json({ error: 'business_id and name are required' });
 
   try {
     const result = await runSQL(
-      `INSERT INTO services (business_id, name, description, duration_minutes, price)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO services (business_id, name, description, duration_minutes, price, is_active)
+       VALUES (?, ?, ?, ?, ?, 0)`,
       [business_id, name, description, duration_minutes || 15, price || 0]
     );
+
     const service = await getSQL(`SELECT * FROM services WHERE id = ?`, [result.lastID]);
-    res.status(201).json({ message: 'Service created', service });
-  } catch {
+
+    res.status(201).json({ message: 'Service created (pending)', service });
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Failed to create service' });
   }
 });
 
-// STEP DATABASE
+
+
 // GET /businesses/:businessId/services
 // List services for one business.
+// If ?all=1 is passed, include pending ones (is_active any).
 app.get('/businesses/:businessId/services', async (req, res) => {
+  const businessId = req.params.businessId;
+  const includeAll = req.query.all === '1';
+
   try {
-    const rows = await allSQL(
-      `SELECT * FROM services WHERE business_id = ? AND is_active = 1 ORDER BY id DESC`,
-      [req.params.businessId]
-    );
+    let rows;
+
+    if (includeAll) {
+      rows = await allSQL(
+        `SELECT * FROM services WHERE business_id = ? ORDER BY id DESC`,
+        [businessId]
+      );
+    } else {
+      rows = await allSQL(
+        `SELECT * FROM services WHERE business_id = ? AND is_active = 1 ORDER BY id DESC`,
+        [businessId]
+      );
+    }
+
     res.json({ services: rows });
-  } catch {
+  } catch (error) {
+    console.error(error);
     res.status(500).json({ error: 'Failed to fetch services' });
   }
 });
+
 
 // STEP DATABASE
 // ---------- Queues ----------
@@ -599,6 +716,252 @@ app.get('/queues/:queueId/overview', async (req, res) => {
     });
   } catch {
     res.status(500).json({ error: 'Failed to get overview' });
+  }
+});
+
+// STEP DATABASE
+// GET /queues/:queueId/members
+// Returns all members in this queue with their user names.
+app.get('/queues/:queueId/members', async (req, res) => {
+  const queueId = req.params.queueId;
+  try {
+    const members = await allSQL(
+      `SELECT qm.id,
+              qm.ticket_number,
+              qm.status,
+              qm.joined_at,
+              u.name AS user_name
+       FROM queue_members qm
+       JOIN users u ON u.id = qm.user_id
+       WHERE qm.queue_id = ?
+       ORDER BY qm.ticket_number ASC`,
+      [queueId]
+    );
+
+    res.json({ members });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to fetch queue members' });
+  }
+});
+
+// STEP DATABASE
+// PATCH /queue_members/:id/status
+// Update status of a specific ticket (waiting/called/skipped/done/left).
+app.patch('/queue_members/:id/status', async (req, res) => {
+  const memberId = req.params.id;
+  const { status } = req.body;
+
+  const allowed = ['waiting', 'called', 'skipped', 'done', 'left'];
+  if (!allowed.includes(status)) {
+    return res.status(400).json({ error: 'Invalid status value' });
+  }
+
+  try {
+    await runSQL(
+      `UPDATE queue_members
+       SET status = ?, updated_at = CURRENT_TIMESTAMP
+       WHERE id = ?`,
+      [status, memberId]
+    );
+
+    const member = await getSQL(
+      `SELECT * FROM queue_members WHERE id = ?`,
+      [memberId]
+    );
+
+    res.json({ message: 'Status updated', member });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to update member status' });
+  }
+});
+
+// =====================================================
+// Admin: manage business approval
+// =====================================================
+
+// GET /admin/businesses?status=pending|approved
+// List businesses by status.
+app.get('/admin/businesses', async (req, res) => {
+  const status = req.query.status || 'pending';
+  let isActive;
+
+  if (status === 'approved') {
+    isActive = 1;
+  } else {
+    // default: pending
+    isActive = 0;
+  }
+
+  try {
+    const rows = await allSQL(
+      `SELECT * FROM businesses WHERE is_active = ? ORDER BY created_at DESC`,
+      [isActive]
+    );
+    res.json({ businesses: rows });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch admin businesses' });
+  }
+});
+
+// PATCH /admin/businesses/:id/approve
+// Mark business as approved (is_active = 1).
+app.patch('/admin/businesses/:id/approve', async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    await runSQL(
+      `UPDATE businesses SET is_active = 1 WHERE id = ?`,
+      [id]
+    );
+
+    const business = await getSQL(
+      `SELECT * FROM businesses WHERE id = ?`,
+      [id]
+    );
+
+    if (!business) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+
+    res.json({ message: 'Business approved', business });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to approve business' });
+  }
+});
+// PATCH /admin/businesses/:id/reject
+// Mark business as rejected (is_active = -1).
+app.patch('/admin/businesses/:id/reject', async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    await runSQL(
+      `UPDATE businesses SET is_active = -1 WHERE id = ?`,
+      [id]
+    );
+
+    const business = await getSQL(
+      `SELECT * FROM businesses WHERE id = ?`,
+      [id]
+    );
+
+    if (!business) {
+      return res.status(404).json({ error: 'Business not found' });
+    }
+
+    res.json({ message: 'Business rejected', business });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to reject business' });
+  }
+});
+
+
+// Admin: list services by status (pending / approved)
+app.get('/admin/services', async (req, res) => {
+  const status = req.query.status || 'pending';
+  let isActive;
+
+  if (status === 'approved') {
+    isActive = 1;
+  } else {
+    isActive = 0;
+  }
+
+  try {
+    const rows = await allSQL(
+      `SELECT s.*, b.name AS business_name
+       FROM services s
+       JOIN businesses b ON b.id = s.business_id
+       WHERE s.is_active = ?
+       ORDER BY s.created_at DESC`,
+      [isActive]
+    );
+    res.json({ services: rows });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to fetch admin services' });
+  }
+});
+
+// Admin: approve a service
+app.patch('/admin/services/:id/approve', async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    await runSQL(
+      `UPDATE services SET is_active = 1 WHERE id = ?`,
+      [id]
+    );
+
+    const service = await getSQL(
+      `SELECT * FROM services WHERE id = ?`,
+      [id]
+    );
+
+    if (!service) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    res.json({ message: 'Service approved', service });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to approve service' });
+  }
+});
+
+
+// Admin: approve a service
+app.patch('/admin/services/:id/approve', async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    await runSQL(
+      `UPDATE services SET is_active = 1 WHERE id = ?`,
+      [id]
+    );
+
+    const service = await getSQL(
+      `SELECT * FROM services WHERE id = ?`,
+      [id]
+    );
+
+    if (!service) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    res.json({ message: 'Service approved', service });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to approve service' });
+  }
+});
+// Admin: reject a service (is_active = -1)
+app.patch('/admin/services/:id/reject', async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    await runSQL(
+      `UPDATE services SET is_active = -1 WHERE id = ?`,
+      [id]
+    );
+
+    const service = await getSQL(
+      `SELECT * FROM services WHERE id = ?`,
+      [id]
+    );
+
+    if (!service) {
+      return res.status(404).json({ error: 'Service not found' });
+    }
+
+    res.json({ message: 'Service rejected', service });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: 'Failed to reject service' });
   }
 });
 
