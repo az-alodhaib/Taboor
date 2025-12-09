@@ -49,7 +49,8 @@ class SimplePreprocessor:
         self.ct = joblib.load("models/column_transformer.pkl")  # Save this during training!
         self.sc = joblib.load("models/scaler.pkl")  # Save this during training!
         
-    def prepare_customer(self, arrival_hour, queue_length, service_type, service_details):
+    def prepare_customer(self, arrival_hour, queue_length, service_type, 
+                        service_details, avg_service_time, hourly_avg_service_time):
         
         import pandas as pd
         df = pd.DataFrame({
@@ -57,8 +58,8 @@ class SimplePreprocessor:
             'queue_length': [queue_length], 
             'service_type': [service_type],
             'service_details': [service_details],
-            'avg_service_time': [20.0],  
-            'hourly_avg_service_time': [18.0]  
+            'avg_service_time': [avg_service_time],  
+            'hourly_avg_service_time': [hourly_avg_service_time]  
         })
         
         
@@ -90,13 +91,13 @@ class ModelManager:
         self.business_models[business_id].online_update(X, y)
     
     # ADD THIS NEW METHOD:
-    def predict_from_customer_input(self, business_id, arrival_hour, queue_length, service_type, service_details):
+    def predict_from_customer_input(self, business_id, arrival_hour, queue_length,
+                                   service_type, service_details, avg_service_time, hourly_avg_service_time):
      
         X_ready = self.preprocessor.prepare_customer(
-            arrival_hour, queue_length, service_type, service_details
+            arrival_hour, queue_length, service_type, service_details,
+            avg_service_time, hourly_avg_service_time  
         )
-        
-        # Use existing prediction logic
         return self.get_prediction(business_id, X_ready)
     
 
