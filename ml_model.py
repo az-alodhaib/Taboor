@@ -102,18 +102,18 @@ class ModelManager:
     
 
     
-manager = ModelManager()
-preprocessor = SimplePreprocessor()
+# manager = ModelManager()
+# preprocessor = SimplePreprocessor()
 
 
-arrival_hour = 14  
-queue_length = 3
-service_type = "barber"
-service_details = "haircut"
+# arrival_hour = 14  
+# queue_length = 3
+# service_type = "barber"
+# service_details = "haircut"
 
 
-X_ready = preprocessor.prepare_customer(arrival_hour, queue_length, service_type, service_details)
+# X_ready = preprocessor.prepare_customer(arrival_hour, queue_length, service_type, service_details, avg_service_time, )
 
 
-prediction = manager.get_prediction("Barber_1", X_ready)
-print(f"Wait time: {prediction[0]:.1f} minutes")
+# prediction = manager.get_prediction("Barber_1", X_ready)
+# print(f"Wait time: {prediction[0]:.1f} minutes")
