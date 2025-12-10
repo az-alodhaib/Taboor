@@ -1,3 +1,7 @@
+// Leaflet map variables
+let homeMap = null;
+let homeMarkersLayer = null;
+
 // ==========================
 // Configurations
 // ==========================
@@ -13,7 +17,7 @@ const TAX_RATE = 0.15;
 // ==========================
 
 class Business {
-  constructor({ id, name, category, address, phone, distance, rating, queuePeople, queuePosition, waitTimeMinutes }) {
+ constructor({ id, name, category, address, phone, latitude, longitude, distance, rating, queuePeople, queuePosition, waitTimeMinutes }) {
     this.id = id;
     this.name = name;
     this.category = category || "";
@@ -24,6 +28,8 @@ class Business {
     this.queuePeople = queuePeople || 0;
     this.queuePosition = queuePosition || 1;
     this.waitTimeMinutes = waitTimeMinutes || 0;
+    this.latitude = latitude || null;
+    this.longitude = longitude || null;
   }
 }
 
@@ -58,8 +64,9 @@ function HomePage() {
 
     // Initialization
     async init() {
-      // Load businesses at the start
-      await this.loadBusinesses();
+    await this.loadBusinesses();
+    this.initMap();
+    this.plotBusinessesOnMap();
     },
 
     // Load businesses from the backend
@@ -74,12 +81,14 @@ function HomePage() {
         if (!response.ok) throw new Error(json.error || "فشل في تحميل المنشآت");
 
         // Convert each row to a Business object
-        this.businesses = json.businesses.map((row, index) => new Business({
-          ...row,
-          // Placeholder values for distance/rating if not in DB
-          distance: 1 + index * 0.5,
-          rating: 4.5
-        }));
+      this.businesses = json.businesses.map((row, index) => new Business({
+        ...row,
+        latitude: row.latitude,
+        longitude: row.longitude,
+        distance: 1 + index * 0.5,
+        rating: 4.5
+      }));
+
       } catch (error) {
         console.error(error);
         this.errorMessage = error.message || "حدث خطأ غير متوقع";
@@ -180,7 +189,7 @@ function HomePage() {
       const total = subtotal * (1 + TAX_RATE);
       this.totalWithTax = total.toFixed(2); // keep two decimal places
     },
-
+    
     // Confirm selection and proceed
     confirmSelection() {
       if (!this.selectedBusiness) {
@@ -219,10 +228,67 @@ function HomePage() {
           estMinutes: b.waitTimeMinutes
         }
       };
-
+      
       // Save to localStorage so the QStatus page can read it
       localStorage.setItem("queueStatus", JSON.stringify(payload));
       window.location.href = "QStatus.html";
-    }
+    },
+    
+    
+    // ==========================
+    // MAP: Initialize Leaflet Map
+    // ==========================
+    initMap() {
+      const mapElement = document.getElementById("home-map");
+      if (!mapElement) return;
+
+      // Riyadh center
+      const defaultCenter = [24.7136, 46.6753];
+
+      homeMap = L.map("home-map").setView(defaultCenter, 10);
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+       maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+      }).addTo(homeMap);
+
+      // Layer for markers
+     homeMarkersLayer = L.layerGroup().addTo(homeMap);
+    },
+
+    // ==========================
+    // MAP: Add markers for all businesses
+    // ==========================
+    plotBusinessesOnMap() {
+    if (!homeMap || !homeMarkersLayer) return;
+
+      homeMarkersLayer.clearLayers();
+
+      const bounds = L.latLngBounds();
+
+      this.businesses.forEach((b) => {
+    if (!b.latitude || !b.longitude) return;
+
+        const lat = Number(b.latitude);
+        const lng = Number(b.longitude);
+    if (isNaN(lat) || isNaN(lng)) return;
+
+        const marker = L.marker([lat, lng]).addTo(homeMarkersLayer);
+
+        const popup = `
+          <strong>${b.name}</strong><br>
+          <span style="font-size: 0.9rem;">${b.address || "بدون عنوان"}</span><br>
+          <small style="color:#666;">${b.category || ""}</small>
+        `;
+
+      marker.bindPopup(popup);
+      bounds.extend([lat, lng]);
+    });
+
+      if (!bounds.isEmpty()) {
+       homeMap.fitBounds(bounds, { padding: [40, 40] });
+      }
+      }
+
   };
 }

@@ -10,6 +10,11 @@
   <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" rel="stylesheet"/>
   <!-- Alpine.js -->
   <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  <!-- Leaflet CSS -->
+  <link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  />
   <!-- Custom CSS -->
   <link href="home-style.css" rel="stylesheet"/>
 </head>
@@ -49,14 +54,14 @@
         </div>
       </div>
 
-      <!-- Map Placeholder -->
+      <!-- REAL MAP -->
       <div class="card mb-4">
-        <div class="map-placeholder">
-          <i class="bi bi-map display-3 text-muted"></i>
-          <p class="text-muted mt-2 mb-0">تكامل خرائط جوجل قادم قريبًا</p>
-          <small class="text-muted">عرض الخدمات القريبة منك</small>
+        <div id="home-map"
+          style="height: 300px; width: 100%; border-radius: 12px;">
         </div>
       </div>
+
+
 
       <!-- Business Cards -->
       <div id="business-list">
@@ -167,6 +172,8 @@
   </main>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script> 
   <script src="home-page.js"></script>
 </body>
 </html>

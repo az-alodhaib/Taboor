@@ -11,6 +11,11 @@
     <!-- Bootstrap Icons -->
     <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.1/font/bootstrap-icons.min.css" rel="stylesheet">
     
+    <link
+        rel="stylesheet"
+        href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    />
+
     <!-- Custom CSS -->
     <link href="styles.css" rel="stylesheet">
 </head>
@@ -111,12 +116,27 @@
                                        placeholder="الرياض، شارع العليا ..." required>
                             </div>
                             
+                                <!-- Map location picker -->
+                            <div class="mb-3">
+                            <label class="form-label">حدد موقع منشأتك على الخريطة</label>
+                            <p class="text-muted" style="font-size: 0.9rem;">
+                             اضغط على الخريطة لوضع مؤشر مكان المنشأة، ثم يمكنك سحب المؤشر لتعديل الموقع.
+                             </p>
+                            <div id="business-map"
+                            style="width: 100%; height: 300px; border-radius: 10px; border: 1px solid #ccc;">
+                            </div>
+
+                          <!-- Hidden fields for coordinates -->
+                            <input type="hidden" id="latitude">
+                            <input type="hidden" id="longitude">
+                            </div>
+
                             <!-- Password -->
                             <div class="mb-3">
                                 <label class="form-label">كلمة المرور</label>
                                 <input type="password" class="form-control" id="pass-reg" required>
                             </div>
-
+                           
                             <!-- Submit -->
                             <div class="d-grid mb-3">
                                 <button type="submit" class="btn btn-primary btn-gradient">إنشاء الحساب</button>
@@ -138,7 +158,11 @@
     <!-- Bootstrap JS -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.2/js/bootstrap.bundle.min.js"></script>
     
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <!-- Custom JS -->
     <script src="business_index.js"></script>
+
+
 </body>
 </html>
