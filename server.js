@@ -745,11 +745,19 @@ app.get('/queues/:queueId/overview', async (req, res) => {
       ? (await getSQL(`SELECT duration_minutes FROM services WHERE id = ?`, [queue.service_id]))?.duration_minutes || 10
       : 10;
 
+        // self-note: "wait time" = time until a NEW customer starts service.
+    // self-note: include 'called' because the current serving customer still blocks the queue.
+    // self-note: later: replace this with SUM of each member's selected service duration (needs storing service per member).
+    const waitingCount = Number(stats?.waiting || 0);
+    const calledCount  = Number(stats?.called  || 0);
+    const peopleInLine = waitingCount + calledCount;
+
     res.json({
       queue,
       stats,
-      estimated_wait_minutes: (stats?.waiting || 0) * baseMinutes
+      estimated_wait_minutes: peopleInLine * baseMinutes
     });
+
   } catch {
     res.status(500).json({ error: 'Failed to get overview' });
   }

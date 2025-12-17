@@ -15,19 +15,38 @@ function QStatusPage() {
       try {
         const raw = localStorage.getItem('queueStatus');
         if (raw) {
-          const parsed = JSON.parse(raw);
-          if (parsed?.queue?.estMinutes) this.data = parsed;
-        }
-      } catch (e) {}
+        const parsed = JSON.parse(raw);
 
-      // SIMULATION: 1 min == 1 sec (change to *60000 for real time)
-      const est = Math.max(1, Number(this.data.queue.estMinutes) || 5);
-      this._durationMs = est * 1000;
-      this._startTs = performance.now();
+        if (parsed) {
+        this.data = parsed;
+        this.data.queue = this.data.queue || {};
 
-      requestAnimationFrame(this._tick.bind(this));
-      this._animateDots();
-    },
+        // self-note: backward compatibility (old payload only had estMinutes)
+        const legacy = Number(this.data.queue.estMinutes || 0);
+
+        this.data.queue.waitMinutes = Number(this.data.queue.waitMinutes ?? legacy);
+        this.data.queue.submissionMinutes = Number(this.data.queue.submissionMinutes || 0);
+        this.data.queue.travelMinutes = Number(this.data.queue.travelMinutes || 0);
+        this.data.queue.estimationMinutes = Number(
+          this.data.queue.estimationMinutes ?? (this.data.queue.waitMinutes + this.data.queue.travelMinutes)
+        );
+
+        // self-note: keep estMinutes synced so UI doesn't break anywhere else
+        this.data.queue.estMinutes = this.data.queue.waitMinutes;
+      }
+    }
+  } catch (e) {}
+
+  // SIMULATION: 1 min == 1 sec (change to *60000 for real time)
+  // self-note: progress is based on waitMinutes (time until my turn), not submissionMinutes.
+  const est = Math.max(1, Number(this.data.queue.waitMinutes || this.data.queue.estMinutes) || 5);
+  this._durationMs = est * 1000;
+  this._startTs = performance.now();
+
+  requestAnimationFrame(this._tick.bind(this));
+  this._animateDots();
+  },
+
 
     _tick(ts) {
       const elapsed = ts - this._startTs;

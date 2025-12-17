@@ -11,13 +11,52 @@ const API_BASE = "http://localhost:3000";
 // Set tax rate here once; currently 15%
 const TAX_RATE = 0.15;
 
+// ==========================
+// Location + ETA helpers (Frontend only)
+// ==========================
+
+// self-note: Show disclosure BEFORE triggering browser permission prompt.
+async function requestLocationWithDisclosure() {
+  const ok = confirm("📍 سنستخدم موقعك فقط لحساب وقت الوصول (ETA) للمزود. هل توافق؟");
+  if (!ok) return null;
+  return await getUserLocationOnce();
+}
+
+// self-note: Real browser geolocation prompt happens here.
+function getUserLocationOnce() {
+  if (!navigator.geolocation) throw new Error("Geolocation not supported");
+  return new Promise((resolve, reject) => {
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+      (err) => reject(err),
+      { enableHighAccuracy: true, timeout: 8000, maximumAge: 30000 }
+    );
+  });
+}
+
+// self-note: Temporary distance-only ETA (no live traffic). Replace later with Google/HERE/TomTom routing.
+function haversineKm(a, b) {
+  const R = 6371;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+  const s1 = Math.sin(dLat / 2) ** 2;
+  const s2 = Math.cos(a.lat * Math.PI / 180) * Math.cos(b.lat * Math.PI / 180) *
+             (Math.sin(dLng / 2) ** 2);
+  const c = 2 * Math.atan2(Math.sqrt(s1 + s2), Math.sqrt(1 - (s1 + s2)));
+  return R * c;
+}
+
+function approximateTravelMinutes(distanceKm) {
+  const avgCitySpeedKmh = 35;
+  return Math.max(1, Math.round((distanceKm / avgCitySpeedKmh) * 60));
+}
 
 // ==========================
 // Data Models
 // ==========================
 
 class Business {
- constructor({ id, name, category, address, phone, latitude, longitude, distance, rating, queuePeople, queuePosition, waitTimeMinutes }) {
+  constructor({ id, name, category, address, phone, latitude, longitude, distance, rating, queuePeople, queuePosition, waitTimeMinutes, travelMinutes }) {
     this.id = id;
     this.name = name;
     this.category = category || "";
@@ -30,6 +69,7 @@ class Business {
     this.waitTimeMinutes = waitTimeMinutes || 0;
     this.latitude = latitude || null;
     this.longitude = longitude || null;
+    this.travelMinutes = travelMinutes || 0;
   }
 }
 
@@ -61,13 +101,28 @@ function HomePage() {
     selectedBusiness: null,      // currently chosen business
     businessServices: [],        // services for the selected business
     totalWithTax: "0.00",        // total price including tax
+    userLocation: null,
+    locationEnabled: false,
 
     // Initialization
-    async init() {
+   async init() {
+  // self-note: ask user permission for location to compute ETA (travel time)
+   try {
+     const loc = await requestLocationWithDisclosure();
+     if (loc) {
+        this.userLocation = loc;
+        this.locationEnabled = true;
+     }
+    } catch (e) {
+       this.userLocation = null;
+      this.locationEnabled = false;
+   }
+
     await this.loadBusinesses();
     this.initMap();
     this.plotBusinessesOnMap();
     },
+
 
     // Load businesses from the backend
     async loadBusinesses() {
@@ -81,13 +136,28 @@ function HomePage() {
         if (!response.ok) throw new Error(json.error || "فشل في تحميل المنشآت");
 
         // Convert each row to a Business object
-      this.businesses = json.businesses.map((row, index) => new Business({
-        ...row,
-        latitude: row.latitude,
-        longitude: row.longitude,
-        distance: 1 + index * 0.5,
-        rating: 4.5
-      }));
+      this.businesses = json.businesses.map((row, index) => {
+      const hasCoords = row.latitude != null && row.longitude != null;
+      const businessLoc = hasCoords ? { lat: Number(row.latitude), lng: Number(row.longitude) } : null;
+
+      let distance = 1 + index * 0.5;
+      let travelMinutes = 0;
+
+      if (this.userLocation && businessLoc && !isNaN(businessLoc.lat) && !isNaN(businessLoc.lng)) {
+      distance = haversineKm(this.userLocation, businessLoc);
+      travelMinutes = approximateTravelMinutes(distance);
+      }
+
+      return new Business({
+      ...row,
+      latitude: row.latitude,
+      longitude: row.longitude,
+      distance,
+      travelMinutes,
+     rating: 4.5
+      });
+     });
+
 
       } catch (error) {
         console.error(error);
@@ -223,10 +293,25 @@ function HomePage() {
           totalWithTax: this.totalWithTax
         },
         queue: {
-          position: b.queuePosition,
-          totalPeople: b.queuePeople,
-          estMinutes: b.waitTimeMinutes
-        }
+        position: b.queuePosition,
+        totalPeople: b.queuePeople,
+
+        // self-note: submissionMinutes = MY selected service time (only for this user)
+      submissionMinutes: chosenServices.reduce((sum, s) => sum + (Number(s.duration_minutes) || 0), 0),
+
+      // self-note: waitMinutes = queue waiting time until my turn starts (from backend overview)
+      waitMinutes: Number(b.waitTimeMinutes || 0),
+
+      // self-note: travelMinutes = ETA from my current location -> business (approx for now)
+      travelMinutes: Number(b.travelMinutes || 0),
+
+      // self-note: estimationMinutes = waitMinutes + travelMinutes (new feature; will improve later with real traffic API)
+      estimationMinutes: Number(b.waitTimeMinutes || 0) + Number(b.travelMinutes || 0),
+
+      // self-note: legacy field kept so old QStatus still works
+      estMinutes: Number(b.waitTimeMinutes || 0)
+    }
+
       };
       
       // Save to localStorage so the QStatus page can read it
