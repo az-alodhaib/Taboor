@@ -638,9 +638,10 @@ app.post('/queues/:queueId/join', async (req, res) => {
     const ahead = await getSQL(
       `SELECT COUNT(*) AS ahead
        FROM queue_members
-       WHERE queue_id = ? AND status = 'waiting' AND id < ?`,
+       WHERE queue_id = ? AND status IN ('waiting','called') AND id < ?`,
       [queueId, me.id]
     );
+
 
     res.status(201).json({
       message: 'Joined queue successfully',
@@ -677,18 +678,115 @@ app.get('/queues/:queueId/position', async (req, res) => {
     );
 
     res.json({
+      member_id: me.id,
       ticket_number: me.ticket_number,
       status: me.status,
       position: (ahead ? ahead.ahead : 0) + 1
     });
+
   } catch {
     res.status(500).json({ error: 'Failed to get position' });
   }
 });
 
+// STEP ETA/WAIT
+// GET /queues/:queueId/user-status?user_id=123
+// Returns: my position + wait time (people ahead * service duration) + business coords (for ETA travel time).
+app.get('/queues/:queueId/user-status', async (req, res) => {
+  const queueId = req.params.queueId;
+  const { user_id } = req.query;
+
+  if (!user_id) return res.status(400).json({ error: 'user_id is required' });
+
+  try {
+    // self-note: fetch queue + business + service duration
+    const queue = await getSQL(
+      `SELECT q.*,
+              b.name AS business_name,
+              b.latitude  AS business_latitude,
+              b.longitude AS business_longitude,
+              s.duration_minutes AS service_duration_minutes
+       FROM queues q
+       JOIN businesses b ON b.id = q.business_id
+       LEFT JOIN services s ON s.id = q.service_id
+       WHERE q.id = ?`,
+      [queueId]
+    );
+
+    if (!queue) return res.status(404).json({ error: 'Queue not found' });
+
+    // self-note: get my latest active ticket (waiting or called)
+    const me = await getSQL(
+      `SELECT * FROM queue_members
+       WHERE queue_id = ? AND user_id = ? AND status IN ('waiting','called')
+       ORDER BY id DESC LIMIT 1`,
+      [queueId, user_id]
+     );
+
+    if (!me) {
+      return res.status(404).json({ error: 'No active ticket for this user in this queue' });
+    }
+
+    // self-note: count people ahead of me in line (waiting + called) using ticket id ordering
+    const aheadRow = await getSQL(
+      `SELECT COUNT(*) AS ahead
+       FROM queue_members
+       WHERE queue_id = ?
+         AND status IN ('waiting','called')
+         AND id < ?`,
+      [queueId, me.id]
+    );
+
+    const ahead = Number(aheadRow?.ahead || 0);
+
+    //  If there is no service duration, return an error
+    if (!queue.service_duration_minutes) {
+      return res.status(400).json({
+          error: 'Service duration is not defined for this queue'
+      });
+    }
+
+    const baseMinutes = Number(queue.service_duration_minutes);
+
+
+    const waitMinutes = ahead * baseMinutes;
+
+    // self-note: total people currently blocking line (waiting + called)
+    const totals = await getSQL(
+      `SELECT
+         SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END) AS waiting,
+         SUM(CASE WHEN status='called'  THEN 1 ELSE 0 END) AS called
+       FROM queue_members
+       WHERE queue_id = ?`,
+      [queueId]
+    );
+
+    const peopleInLine = Number(totals?.waiting || 0) + Number(totals?.called || 0);
+
+    res.json({
+      ticket_number: me.ticket_number,
+      status: me.status,
+      position: ahead + 1,
+      wait_minutes: waitMinutes,
+      service_duration_minutes: baseMinutes,
+      people_in_line: peopleInLine,
+      business: {
+        id: queue.business_id,
+        name: queue.business_name,
+        latitude: queue.business_latitude,
+        longitude: queue.business_longitude
+      }
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Failed to get user status' });
+  }
+});
+
+
 // STEP DATABASE
 // POST /queues/:queueId/leave
-// Leave queue: mark latest waiting ticket as 'left'.
+// Leave queue: mark latest waiting/called ticket as 'left'.
 app.post('/queues/:queueId/leave', async (req, res) => {
   const { user_id } = req.body;
   const queueId = req.params.queueId;
@@ -697,7 +795,7 @@ app.post('/queues/:queueId/leave', async (req, res) => {
   try {
     const row = await getSQL(
       `SELECT * FROM queue_members
-       WHERE queue_id = ? AND user_id = ? AND status = 'waiting'
+       WHERE queue_id = ? AND user_id = ? AND status IN ('waiting','called')
        ORDER BY id DESC LIMIT 1`,
       [queueId, user_id]
     );
@@ -709,6 +807,7 @@ app.post('/queues/:queueId/leave', async (req, res) => {
     res.status(500).json({ error: 'Failed to leave queue' });
   }
 });
+
 
 // STEP DATABASE
 // POST /queues/:queueId/next
@@ -787,6 +886,7 @@ app.get('/queues/:queueId/members', async (req, res) => {
     const members = await allSQL(
       `SELECT qm.id,
               qm.ticket_number,
+              qm.user_id,
               qm.status,
               qm.joined_at,
               u.name AS user_name
@@ -998,6 +1098,55 @@ app.patch('/admin/services/:id/reject', async (req, res) => {
   }
 });
 
+// ==========================
+// Google Traffic ETA (Distance Matrix)
+// ==========================
+
+const GOOGLE_MAPS_API_KEY = "AIzaSyA9KhxebYlMwEFPghSqCSn8p8eq4UVAU8o";
+
+app.post("/eta", async (req, res) => {
+  const { origin, destination } = req.body || {};
+
+  if (!origin?.lat || !origin?.lng || !destination?.lat || !destination?.lng) {
+    return res.status(400).json({ error: "origin/destination lat/lng required" });
+  }
+
+  try {
+    if (!GOOGLE_MAPS_API_KEY) {
+      return res.status(500).json({ error: "Missing GOOGLE_MAPS_API_KEY" });
+    }
+
+    const origins = `${origin.lat},${origin.lng}`;
+    const destinations = `${destination.lat},${destination.lng}`;
+
+    const url =
+      `https://maps.googleapis.com/maps/api/distancematrix/json` +
+      `?origins=${encodeURIComponent(origins)}` +
+      `&destinations=${encodeURIComponent(destinations)}` +
+      `&mode=driving` +
+      `&departure_time=now` +
+      `&key=${encodeURIComponent(GOOGLE_MAPS_API_KEY)}`;
+
+    const r = await fetch(url);
+    const data = await r.json();
+
+    const el = data?.rows?.[0]?.elements?.[0];
+    if (!el || el.status !== "OK") {
+      return res.status(502).json({ error: "Google ETA failed", details: data });
+    }
+
+    res.json({
+      distanceMeters: el.distance?.value ?? null,
+      durationSeconds: el.duration?.value ?? null,
+      durationInTrafficSeconds: el.duration_in_traffic?.value ?? null,
+      durationText: el.duration?.text ?? null,
+      durationInTrafficText: el.duration_in_traffic?.text ?? null
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "ETA server error" });
+  }
+});
 
 // =============================================
 // STEP 6: Start the Server

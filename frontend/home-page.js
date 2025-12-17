@@ -1,6 +1,12 @@
-/// Leaflet map variables
-let homeMap = null;
-let homeMarkersLayer = null;
+// Google map variables
+let gHomeMap = null;
+let gHomeMarkers = [];
+let gHomeMapInitialized = false;
+
+// user location marker (My Location button)
+let gUserMarker = null;
+let gUserInfoWindow = null;
+
 
 // ==========================
 // Configurations
@@ -48,6 +54,22 @@ function haversineKm(a, b) {
 function approximateTravelMinutes(distanceKm) {
   const avgCitySpeedKmh = 35;
   return Math.max(1, Math.round((distanceKm / avgCitySpeedKmh) * 60));
+}
+
+async function getTrafficEtaMinutes(origin, destination) {
+  const res = await fetch(`${API_BASE}/eta`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ origin, destination })
+  });
+
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "ETA failed");
+
+  const sec = json.durationInTrafficSeconds ?? json.durationSeconds ?? null;
+  if (sec == null) return 0;
+
+  return Math.max(0, Math.round(sec / 60));
 }
 
 // ==========================
@@ -104,27 +126,89 @@ function HomePage() {
     locationEnabled: false,
     businessTypes: [],
     businessTypeMap: {},
+    
+    //Centering Users location
+    async centerToMyLocation() {
+    try {
+    if (!gHomeMapInitialized || !gHomeMap) {
+      this.initMap();
+      if (!gHomeMap) return;
+    }
 
+    // self-note: request permission only when user clicks the button
+    if (!this.userLocation) {
+      const loc = await requestLocationWithDisclosure();
+      if (!loc) return;
+      this.userLocation = loc;
+      this.locationEnabled = true;
+    }
+
+    const pos = { lat: Number(this.userLocation.lat), lng: Number(this.userLocation.lng) };
+    if (isNaN(pos.lat) || isNaN(pos.lng)) return;
+
+    if (!gUserMarker) {
+      gUserMarker = new google.maps.Marker({
+        position: pos,
+        map: gHomeMap,
+        title: "موقعي"
+      });
+    } else {
+      gUserMarker.setPosition(pos);
+      gUserMarker.setMap(gHomeMap);
+    }
+
+    if (!gUserInfoWindow) {
+      gUserInfoWindow = new google.maps.InfoWindow({
+        content: `<div style="direction:rtl;text-align:right;"><strong>موقعك الحالي</strong></div>`
+      });
+    }
+
+    gHomeMap.setZoom(15);
+    gHomeMap.panTo(pos);
+    gUserInfoWindow.open({ map: gHomeMap, anchor: gUserMarker });
+  } catch (e) {
+    console.error(e);
+  }
+},
+
+ 
+    async loadTrafficEtaForBusiness(business) {
+  const hasCoords = business.latitude != null && business.longitude != null;
+  if (!this.userLocation || !hasCoords) return;
+
+  const destination = { lat: Number(business.latitude), lng: Number(business.longitude) };
+  if (isNaN(destination.lat) || isNaN(destination.lng)) return;
+
+  try {
+    const mins = await getTrafficEtaMinutes(this.userLocation, destination);
+    business.travelMinutes = mins;
+  } catch (e) {
+    console.error(e);
+    // self-note: keep old approximate value if Google fails
+  }
+},
 
     // Initialization
    async init() {
-  // self-note: ask user permission for location to compute ETA (travel time)
-   try {
-     const loc = await requestLocationWithDisclosure();
-     if (loc) {
-        this.userLocation = loc;
-        this.locationEnabled = true;
-     }
-    } catch (e) {
-       this.userLocation = null;
-      this.locationEnabled = false;
-   }
-    await this.loadBusinessTypes();
-    await this.loadBusinesses();
-    await this.loadBusinesses();
-    this.initMap();
-    this.plotBusinessesOnMap();
-    },
+  try {
+    // self-note: ask user permission for location to compute ETA (travel time)
+    const loc = await requestLocationWithDisclosure();
+    if (loc) {
+      this.userLocation = loc;
+      this.locationEnabled = true;
+    }
+  } catch (e) {
+    this.userLocation = null;
+    this.locationEnabled = false;
+  }
+
+  await this.loadBusinessTypes();
+  await this.loadBusinesses();
+
+  this.initMap();
+  this.plotBusinessesOnMap();
+},
+
 
 
     // Load businesses from the backend
@@ -170,6 +254,35 @@ function HomePage() {
       }
     },
 
+    async centerToMyLocation() {
+      try {
+      if (!gHomeMapInitialized || !gHomeMap) return;
+
+     // self-note: if location already exists, just center
+     if (this.userLocation && !Number.isNaN(Number(this.userLocation.lat)) && !Number.isNaN(Number(this.userLocation.lng))) {
+        const pos = { lat: Number(this.userLocation.lat), lng: Number(this.userLocation.lng) };
+       gHomeMap.setZoom(15);
+        gHomeMap.panTo(pos);
+        return;
+      }
+
+      // self-note: fallback if user denied earlier or location not ready
+      const loc = await requestLocationWithDisclosure();
+      if (!loc) return;
+
+      this.userLocation = loc;
+      this.locationEnabled = true;
+
+      const pos = { lat: Number(loc.lat), lng: Number(loc.lng) };
+      if (Number.isNaN(pos.lat) || Number.isNaN(pos.lng)) return;
+
+     gHomeMap.setZoom(15);
+      gHomeMap.panTo(pos);
+    } catch (e) {
+     console.error(e);
+    }
+  },
+
     // Filtered list of businesses based on category and search query
     get filteredBusinesses() {
       const query = this.searchQuery.trim();
@@ -192,10 +305,18 @@ function HomePage() {
         this.loadServicesForBusiness(business.id),
         this.loadQueueInfoForBusiness(business)
       ]);
+      //Call it when the user opens a business
+      await Promise.all([
+      this.loadServicesForBusiness(business.id),
+      this.loadQueueInfoForBusiness(business)
+      ]);
+
+    await this.loadTrafficEtaForBusiness(business);
+
 
       this.updateTotals();
     },
-
+    
     // Load services for a specific business
     async loadServicesForBusiness(businessId) {
       try {
@@ -248,11 +369,16 @@ function HomePage() {
           business.queuePeople = 0;
           business.queuePosition = 1;
           business.waitTimeMinutes = 0;
+          
+          // self-note: needed so QStatus can detect missing queue and not call backend with undefined
+          business.queueId = null;
           return;
         }
 
         // Use the first open queue or the first available queue
         const activeQueue = queues.find(q => q.status === "open") || queues[0];
+        // self-note: store queue id so QStatus can call backend later (leave/done/position)
+        business.queueId = activeQueue.id;
 
         // Get queue overview
         const overviewRes = await fetch(`${API_BASE}/queues/${activeQueue.id}/overview`);
@@ -305,8 +431,13 @@ function HomePage() {
           id: b.id,
           name: b.name,
           address: b.address,
-          phone: b.phone
+          phone: b.phone,
+
+          // self-note: required for ETA (user -> business)
+          latitude: b.latitude,
+          longitude: b.longitude
         },
+
         services: chosenServices.map(s => ({
           id: s.id,
           name: s.name,
@@ -319,21 +450,22 @@ function HomePage() {
         queue: {
         position: b.queuePosition,
         totalPeople: b.queuePeople,
+        queueId: b.queueId,
 
         // self-note: submissionMinutes = MY selected service time (only for this user)
-      submissionMinutes: chosenServices.reduce((sum, s) => sum + (Number(s.duration_minutes) || 0), 0),
+        submissionMinutes: chosenServices.reduce((sum, s) => sum + (Number(s.duration_minutes) || 0), 0),
 
-      // self-note: waitMinutes = queue waiting time until my turn starts (from backend overview)
-      waitMinutes: Number(b.waitTimeMinutes || 0),
+        // self-note: waitMinutes = queue waiting time until my turn starts (from backend overview)
+        waitMinutes: Number(b.waitTimeMinutes || 0),
 
-      // self-note: travelMinutes = ETA from my current location -> business (approx for now)
-      travelMinutes: Number(b.travelMinutes || 0),
+        // self-note: travelMinutes = ETA from my current location -> business (approx for now)
+        travelMinutes: Number(b.travelMinutes || 0),
 
-      // self-note: estimationMinutes = waitMinutes + travelMinutes (new feature; will improve later with real traffic API)
-      estimationMinutes: Number(b.waitTimeMinutes || 0) + Number(b.travelMinutes || 0),
+        // self-note: estimationMinutes = waitMinutes + travelMinutes (new feature; will improve later with real traffic API)
+        estimationMinutes: Number(b.waitTimeMinutes || 0) + Number(b.travelMinutes || 0),
 
-      // self-note: legacy field kept so old QStatus still works
-      estMinutes: Number(b.waitTimeMinutes || 0)
+        // self-note: legacy field kept so old QStatus still works
+        estMinutes: Number(b.waitTimeMinutes || 0)
     }
 
       };
@@ -345,59 +477,110 @@ function HomePage() {
     
     
     // ==========================
-    // MAP: Initialize Leaflet Map
-    // ==========================
-    initMap() {
-      const mapElement = document.getElementById("home-map");
-      if (!mapElement) return;
+// MAP: Initialize Google Map
+// ==========================
+initMap() {
+  const mapElement = document.getElementById("home-map");
+  if (!mapElement) return;
 
-      // Riyadh center
-      const defaultCenter = [24.7136, 46.6753];
+  // self-note: map script might still be loading
+  if (!window.google || !google.maps) {
+    setTimeout(() => this.initMap(), 200);
+    return;
+  }
 
-      homeMap = L.map("home-map").setView(defaultCenter, 10);
+  // Riyadh center
+  const defaultCenter = { lat: 24.7136, lng: 46.6753 };
 
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-       maxZoom: 19,
-      attribution: "&copy; OpenStreetMap contributors"
-      }).addTo(homeMap);
+  // self-note: avoid re-init
+  if (gHomeMapInitialized && gHomeMap) {
+    setTimeout(() => {
+      google.maps.event.trigger(gHomeMap, "resize");
+      gHomeMap.setCenter(defaultCenter);
+    }, 200);
+    return;
+  }
 
-      // Layer for markers
-     homeMarkersLayer = L.layerGroup().addTo(homeMap);
-    },
+  gHomeMap = new google.maps.Map(mapElement, {
+    center: defaultCenter,
+    zoom: 10,
+    mapTypeControl: false,
+    streetViewControl: false,
+    fullscreenControl: false
+  });
 
-    // ==========================
-    // MAP: Add markers for all businesses
-    // ==========================
-    plotBusinessesOnMap() {
-    if (!homeMap || !homeMarkersLayer) return;
+  gHomeMapInitialized = true;
+},
 
-      homeMarkersLayer.clearLayers();
+// ==========================
+// MAP: Add markers for all businesses
+// ==========================
+plotBusinessesOnMap() {
+  if (!gHomeMapInitialized || !gHomeMap) return;
 
-      const bounds = L.latLngBounds();
+  // clear old markers
+  gHomeMarkers.forEach(m => m.setMap(null));
+  gHomeMarkers = [];
 
-      this.businesses.forEach((b) => {
-    if (!b.latitude || !b.longitude) return;
+  const bounds = new google.maps.LatLngBounds();
+  let addedAny = false;
 
-        const lat = Number(b.latitude);
-        const lng = Number(b.longitude);
+  this.businesses.forEach((b) => {
+    if (b.latitude == null || b.longitude == null) return;
+
+    const lat = Number(b.latitude);
+    const lng = Number(b.longitude);
     if (isNaN(lat) || isNaN(lng)) return;
 
-        const marker = L.marker([lat, lng]).addTo(homeMarkersLayer);
+    const pos = { lat, lng };
 
-        const popup = `
-          <strong>${b.name}</strong><br>
-          <span style="font-size: 0.9rem;">${b.address || "بدون عنوان"}</span><br>
-          <small style="color:#666;">${b.category || ""}</small>
-        `;
-
-      marker.bindPopup(popup);
-      bounds.extend([lat, lng]);
+    const marker = new google.maps.Marker({
+      position: pos,
+      map: gHomeMap,
+      title: b.name
     });
 
-      if (!bounds.isEmpty()) {
-       homeMap.fitBounds(bounds, { padding: [40, 40] });
-      }
-      }
+    const btnId = `choose-provider-${b.id}`;
 
-  };
+    const info = new google.maps.InfoWindow({
+      content: `
+        <div style="direction:rtl;text-align:right; min-width:220px;">
+          <div style="font-weight:700; margin-bottom:4px;">${b.name}</div>
+          <div style="font-size:0.9rem; color:#555;">${b.address || "بدون عنوان"}</div>
+          <div style="font-size:0.85rem; color:#777; margin:6px 0;">${this.getBusinessTypeLabel?.(b.category) || b.category || ""}</div>
+          <button id="${btnId}" style="width:100%; padding:8px 10px; border-radius:10px; border:0; background:#0d6efd; color:#fff;">
+            اختيار هذا المزود
+          </button>
+        </div>
+      `
+    });
+
+    marker.addListener("click", () => {
+      info.open({ map: gHomeMap, anchor: marker });
+
+      // self-note: bind button after InfoWindow DOM is ready
+      google.maps.event.addListenerOnce(info, "domready", () => {
+        const el = document.getElementById(btnId);
+        if (!el) return;
+        el.onclick = () => {
+          // same behavior as clicking the card button
+          if (typeof this.openBusiness === "function") this.openBusiness(b);
+          else if (typeof this.showServices === "function") this.showServices(b);
+        };
+      });
+    });
+
+    gHomeMarkers.push(marker);
+    bounds.extend(pos);
+    addedAny = true;
+  });
+
+  if (addedAny) {
+    gHomeMap.fitBounds(bounds, { top: 40, bottom: 40, left: 40, right: 40 });
+  }
+},
+
+
+
+    };
 }

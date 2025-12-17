@@ -46,11 +46,30 @@
       </div>
       <div class="col-sm-4">
         <div class="stat-card">
-          <div class="label">الوقت المتوقع</div>
-          <div class="value" x-text="data.queue.estMinutes + ' دقيقة'"></div>
+          <div class="label">وقت الانتظار</div>
+          <div class="value" x-text="(data.queue.waitMinutes ?? data.queue.estMinutes ?? 0) + ' دقيقة'"></div>
         </div>
       </div>
     </div>
+    <!-- ETA (Travel time only) - Unique place -->
+    <div class="card mb-3">
+      <div class="card-body">
+        <div class="d-flex align-items-center justify-content-between">
+          <div>
+            <div class="fw-bold">ETA (وقت الوصول)</div>
+            <div class="text-muted" style="font-size:0.9rem;">
+             هذا الوقت يوضح المدة المتوقعة حتى تصل إلى موقع المنشأة.
+            </div>
+          </div>
+
+          <div class="fs-5 fw-bold">
+             <span x-show="data.queue.etaMinutes != null" x-text="data.queue.etaMinutes + ' دقيقة'"></span>
+             <span x-show="data.queue.etaMinutes == null" class="text-muted">غير متاح</span>
+            </div>
+          </div>
+        </div>
+    </div>
+
 
     <div class="d-flex justify-content-between align-items-center mb-2">
       <div class="progress-caption">جاري التقدم<span class="dots" x-text="dots"></span></div>

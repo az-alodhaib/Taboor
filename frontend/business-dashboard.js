@@ -133,11 +133,14 @@ function setBusinessHeader(queueOverview) {
 // ===================================
 
 async function loadStats(queueId, initialLoad = false) {
-  // self-note: get stats for the cards
-  const res = await fetch(`${API_BASE}/queues/${queueId}/stats`);
-  if (!res.ok) throw new Error("فشل تحميل الإحصائيات.");
+  // self-note: backend endpoint is /overview (not /stats)
+  const res = await fetch(`${API_BASE}/queues/${queueId}/overview`);
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "فشل تحميل الإحصائيات.");
 
-  const stats = await res.json();
+  const stats = json.stats || {};
+  const queue = json.queue || {};
+  const estimatedWait = Number(json.estimated_wait_minutes || 0);
 
   const currentNumberEl = document.getElementById("current-number");
   const waitingCountEl = document.getElementById("waiting-count");
@@ -145,89 +148,151 @@ async function loadStats(queueId, initialLoad = false) {
   const cancelledCountEl = document.getElementById("cancelled-count");
   const avgWaitEl = document.getElementById("avg-wait-time");
 
-  if (currentNumberEl) currentNumberEl.textContent = stats.current_number ?? "-";
-  if (waitingCountEl) waitingCountEl.textContent = stats.waiting_count ?? "0";
-  if (servedCountEl) servedCountEl.textContent = stats.served_count ?? "0";
-  if (cancelledCountEl) cancelledCountEl.textContent = stats.cancelled_count ?? "0";
+  // self-note: current number will be set in loadQueueMembers (from called ticket)
+  if (currentNumberEl) currentNumberEl.textContent = "-";
 
-  if (avgWaitEl) {
-    const avg = stats.avg_wait_time_minutes;
-    avgWaitEl.textContent = avg != null ? `${avg} دقيقة` : "غير متوفر";
-  }
+  if (waitingCountEl) waitingCountEl.textContent = stats.waiting ?? "0";
+  if (servedCountEl) servedCountEl.textContent = stats.done ?? "0";
 
-  // self-note: first load → hide "empty" banner if needed
+  // self-note: cancelled = skipped + left
+  const cancelled = Number(stats.skipped || 0) + Number(stats.left || 0);
+  if (cancelledCountEl) cancelledCountEl.textContent = String(cancelled);
+
+  // self-note: show estimated wait as the main wait metric
+  if (avgWaitEl) avgWaitEl.textContent = `${estimatedWait} دقيقة`;
+
+  // self-note: update header from overview on first load (more reliable)
   if (initialLoad) {
+    setBusinessHeader({
+      business_name: queue.business_name,
+      service_name: queue.service_name
+    });
+
     const emptyState = document.getElementById("empty-state");
     if (emptyState) emptyState.classList.add("d-none");
   }
 }
 
+
 async function loadQueueMembers(queueId) {
   const res = await fetch(`${API_BASE}/queues/${queueId}/members`);
-  if (!res.ok) throw new Error("فشل تحميل قائمة المنتظرين.");
-
   const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "فشل تحميل قائمة المنتظرين.");
+
   const members = data.members || [];
 
   const tbody = document.getElementById("queue-members-body");
   const emptyState = document.getElementById("empty-state");
+  const currentNumberEl = document.getElementById("current-number");
   if (!tbody) return;
 
-  tbody.innerHTML = ""; // self-note: clear old rows
+  tbody.innerHTML = "";
 
   if (members.length === 0) {
-    // self-note: show empty state if no members
     if (emptyState) emptyState.classList.remove("d-none");
+    if (currentNumberEl) currentNumberEl.textContent = "-";
     return;
   } else if (emptyState) {
     emptyState.classList.add("d-none");
   }
 
-  // self-note: each member becomes a table row
-  members.forEach((m) => {
-    const row = document.createElement("tr");
+  // self-note: set "current number" from first called ticket (smallest ticket_number)
+  const called = members
+    .filter(m => m.status === "called")
+    .sort((a, b) => Number(a.ticket_number) - Number(b.ticket_number))[0];
 
-    const position = document.createElement("td");
-    const name = document.createElement("td");
-    const status = document.createElement("td");
-    const joinedAt = document.createElement("td");
-    const servedAt = document.createElement("td");
+  if (currentNumberEl) currentNumberEl.textContent = called ? called.ticket_number : "-";
 
-    position.textContent = m.position ?? "-";
-    name.textContent = m.customer_name || "عميل";
+  const statusMap = {
+    waiting: "منتظر",
+    called: "تم النداء",
+    done: "تمت الخدمة",
+    skipped: "متخطي",
+    left: "غادر"
+  };
 
-    const statusMap = {
-      waiting: "منتظر",
-      serving: "جاري الخدمة",
-      served: "تمت الخدمة",
-      cancelled: "ملغى",
+ members.forEach((m, idx) => {
+  const row = document.createElement("tr");
+
+  const position = document.createElement("td");
+  const name = document.createElement("td");
+  const status = document.createElement("td");
+  const joinedAt = document.createElement("td");
+  const servedAt = document.createElement("td");
+  const actions = document.createElement("td");
+
+  position.textContent = String(idx + 1);
+  name.textContent = m.user_name || "عميل";
+  status.textContent = statusMap[m.status] || (m.status || "-");
+
+  joinedAt.textContent = m.joined_at
+    ? new Date(m.joined_at).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })
+    : "-";
+
+  servedAt.textContent = "-";
+
+  // self-note: actions allowed only for waiting/called
+  if (m.status === "waiting" || m.status === "called") {
+    const doneBtn = document.createElement("button");
+    doneBtn.className = "btn btn-sm btn-success me-2";
+    doneBtn.textContent = "تم";
+
+    const skipBtn = document.createElement("button");
+    skipBtn.className = "btn btn-sm btn-outline-secondary";
+    skipBtn.textContent = "تخطي";
+
+    doneBtn.onclick = async () => {
+      try {
+        doneBtn.disabled = true;
+        skipBtn.disabled = true;
+
+        await setMemberStatus(m.id, "done");
+        await loadStats(queueId);
+        await loadQueueMembers(queueId);
+      } catch (e) {
+        console.error(e);
+        alert("تعذر تحديث الحالة إلى (تم).");
+      } finally {
+        doneBtn.disabled = false;
+        skipBtn.disabled = false;
+      }
     };
-    status.textContent = statusMap[m.status] || m.status || "-";
 
-    // self-note: times formatted for Arabic locale
-    joinedAt.textContent = m.joined_at
-      ? new Date(m.joined_at).toLocaleTimeString("ar-SA", {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "-";
+    skipBtn.onclick = async () => {
+      try {
+        doneBtn.disabled = true;
+        skipBtn.disabled = true;
 
-    servedAt.textContent = m.served_at
-      ? new Date(m.served_at).toLocaleTimeString("ar-SA", {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      : "-";
+        await setMemberStatus(m.id, "skipped");
+        await loadStats(queueId);
+        await loadQueueMembers(queueId);
+      } catch (e) {
+        console.error(e);
+        alert("تعذر تحديث الحالة إلى (تخطي).");
+      } finally {
+        doneBtn.disabled = false;
+        skipBtn.disabled = false;
+      }
+    };
 
-    row.appendChild(position);
-    row.appendChild(name);
-    row.appendChild(status);
-    row.appendChild(joinedAt);
-    row.appendChild(servedAt);
+    actions.appendChild(doneBtn);
+    actions.appendChild(skipBtn);
+  } else {
+    actions.textContent = "-";
+  }
 
-    tbody.appendChild(row);
-  });
+  row.appendChild(position);
+  row.appendChild(name);
+  row.appendChild(status);
+  row.appendChild(joinedAt);
+  row.appendChild(servedAt);
+  row.appendChild(actions);
+
+  tbody.appendChild(row);
+});
+
 }
+
 
 
 // ========================================
@@ -243,17 +308,17 @@ async function handleCallNext(queueId) {
   }
 
   try {
-    const res = await fetch(`${API_BASE}/queues/${queueId}/call-next`, {
+    // self-note: backend endpoint is /next (not /call-next)
+    const res = await fetch(`${API_BASE}/queues/${queueId}/next`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json" }
     });
 
-    if (!res.ok) throw new Error("فشل نداء العميل.");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "فشل نداء العميل.");
 
-    const data = await res.json();
     if (data.message) alert(data.message);
 
-    // self-note: refresh stats + members after calling next
     await loadStats(queueId);
     await loadQueueMembers(queueId);
   } catch (err) {
@@ -266,6 +331,20 @@ async function handleCallNext(queueId) {
     }
   }
 }
+
+//
+async function setMemberStatus(memberId, newStatus) {
+  // self-note: backend endpoint is PATCH /queue_members/:id/status
+  const res = await fetch(`${API_BASE}/queue_members/${memberId}/status`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: newStatus })
+  });
+
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(json.error || "فشل تحديث حالة العميل.");
+}
+
 
 
 // =================================
