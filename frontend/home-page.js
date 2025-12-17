@@ -1,15 +1,14 @@
-// Leaflet map variables
+/// Leaflet map variables
 let homeMap = null;
 let homeMarkersLayer = null;
 
 // ==========================
 // Configurations
 // ==========================
-
 const API_BASE = "http://localhost:3000";
 
 // Set tax rate here once; currently 15%
-const TAX_RATE = 0.15;
+// canceled const TAX_RATE = 0.15;
 
 // ==========================
 // Location + ETA helpers (Frontend only)
@@ -103,6 +102,9 @@ function HomePage() {
     totalWithTax: "0.00",        // total price including tax
     userLocation: null,
     locationEnabled: false,
+    businessTypes: [],
+    businessTypeMap: {},
+
 
     // Initialization
    async init() {
@@ -117,7 +119,8 @@ function HomePage() {
        this.userLocation = null;
       this.locationEnabled = false;
    }
-
+    await this.loadBusinessTypes();
+    await this.loadBusinesses();
     await this.loadBusinesses();
     this.initMap();
     this.plotBusinessesOnMap();
@@ -208,6 +211,28 @@ function HomePage() {
         alert(error.message || "حدث خطأ أثناء تحميل الخدمات");
       }
     },
+    
+
+    async loadBusinessTypes() {
+     try {
+        const res = await fetch(`${API_BASE}/meta/business-types`);
+        const json = await res.json();
+        if (res.ok && Array.isArray(json.businessTypes)) {
+         this.businessTypes = json.businessTypes;
+        }
+      } catch (e) {}
+
+      if (!Array.isArray(this.businessTypes) || this.businessTypes.length === 0) {
+       this.businessTypes = [
+          { value: "barber", label: "صالون حلاقة" },
+         { value: "carwash", label: "غسيل سيارات" },
+         { value: "shop", label: "متجر" }
+        ];
+      }
+
+      this.businessTypeMap = {};
+      this.businessTypes.forEach(t => this.businessTypeMap[t.value] = t.label);
+    },
 
     // Load queue information for the selected business
     async loadQueueInfoForBusiness(business) {
@@ -256,7 +281,7 @@ function HomePage() {
     updateTotals() {
       const selectedServices = this.businessServices.filter(s => s.selected);
       const subtotal = selectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
-      const total = subtotal * (1 + TAX_RATE);
+      const total = subtotal;
       this.totalWithTax = total.toFixed(2); // keep two decimal places
     },
     
@@ -289,7 +314,6 @@ function HomePage() {
           duration_minutes: s.duration_minutes
         })),
         totals: {
-          taxRate: TAX_RATE,
           totalWithTax: this.totalWithTax
         },
         queue: {

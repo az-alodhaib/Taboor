@@ -34,6 +34,21 @@ app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.urlencoded({ extended: true })); // optional for forms
 
+// ==========================
+// Business types (single source of truth)
+// ==========================
+const BUSINESS_TYPES = [
+  { value: "barber", label: "صالون حلاقة" },
+  { value: "carwash", label: "غسيل سيارات" },
+  { value: "shop", label: "متجر" },
+  { value: "cafe", label: "مقهى" },
+  { value: "restaurant", label: "مطعم" },
+  { value: "clinic", label: "عيادة" }
+];
+
+app.get("/meta/business-types", (req, res) => {
+  res.json({ businessTypes: BUSINESS_TYPES });
+});
 
 // =============================================
 // STEP 4: Setup Database
@@ -852,30 +867,30 @@ app.get('/admin/businesses', async (req, res) => {
 
 // PATCH /admin/businesses/:id/approve
 // Mark business as approved (is_active = 1).
-app.patch('/admin/businesses/:id/approve', async (req, res) => {
-  const id = req.params.id;
+  app.patch('/admin/businesses/:id/approve', async (req, res) => {
+    const id = req.params.id;
+    const { category } = req.body || {};
 
-  try {
-    await runSQL(
-      `UPDATE businesses SET is_active = 1 WHERE id = ?`,
-      [id]
-    );
+    try {
+      if (category && category.trim() !== "") {
+       const allowed = BUSINESS_TYPES.some(t => t.value === category);
+        if (!allowed) return res.status(400).json({ error: "Invalid business category" });
 
-    const business = await getSQL(
-      `SELECT * FROM businesses WHERE id = ?`,
-      [id]
-    );
+        await runSQL(`UPDATE businesses SET is_active = 1, category = ? WHERE id = ?`, [category, id]);
+      }   else {
+      await runSQL(`UPDATE businesses SET is_active = 1 WHERE id = ?`, [id]);
+      }
 
-    if (!business) {
-      return res.status(404).json({ error: 'Business not found' });
+      const business = await getSQL(`SELECT * FROM businesses WHERE id = ?`, [id]);
+      if (!business) return res.status(404).json({ error: 'Business not found' });
+
+      res.json({ message: 'Business approved', business });
+    }   catch (error) {
+      console.error(error);
+      res.status(500).json({ error: 'Failed to approve business' });
     }
+  });
 
-    res.json({ message: 'Business approved', business });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to approve business' });
-  }
-});
 // PATCH /admin/businesses/:id/reject
 // Mark business as rejected (is_active = -1).
 app.patch('/admin/businesses/:id/reject', async (req, res) => {
@@ -957,32 +972,6 @@ app.patch('/admin/services/:id/approve', async (req, res) => {
   }
 });
 
-
-// Admin: approve a service
-app.patch('/admin/services/:id/approve', async (req, res) => {
-  const id = req.params.id;
-
-  try {
-    await runSQL(
-      `UPDATE services SET is_active = 1 WHERE id = ?`,
-      [id]
-    );
-
-    const service = await getSQL(
-      `SELECT * FROM services WHERE id = ?`,
-      [id]
-    );
-
-    if (!service) {
-      return res.status(404).json({ error: 'Service not found' });
-    }
-
-    res.json({ message: 'Service approved', service });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ error: 'Failed to approve service' });
-  }
-});
 // Admin: reject a service (is_active = -1)
 app.patch('/admin/services/:id/reject', async (req, res) => {
   const id = req.params.id;

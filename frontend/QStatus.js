@@ -36,13 +36,20 @@ function QStatusPage() {
       }
     }
   } catch (e) {}
-
+ 
   // SIMULATION: 1 min == 1 sec (change to *60000 for real time)
   // self-note: progress is based on waitMinutes (time until my turn), not submissionMinutes.
-  const est = Math.max(1, Number(this.data.queue.waitMinutes || this.data.queue.estMinutes) || 5);
-  this._durationMs = est * 1000;
-  this._startTs = performance.now();
+  const pos = Number(this.data.queue.position || 0);
+  const wait = Number(this.data.queue.waitMinutes ?? this.data.queue.estMinutes ?? 0);
 
+  if (pos <= 1 || wait <= 0) {
+    this.progress = 100;
+    return;
+  }
+
+  const est = Math.max(1, wait);
+  this._durationMs = est * 60 * 1000;
+  this._startTs = performance.now();
   requestAnimationFrame(this._tick.bind(this));
   this._animateDots();
   },

@@ -35,11 +35,13 @@
       <!-- Category -->
       <div class="card mb-3">
         <div class="card-body">
-          <label class="form-label">نوع الخدمة</label>
-          <select class="form-select" x-model="selectedCategory" @change="filterBusinesses">
+          <label class="form-label mb-2">تصفية حسب نوع الخدمة</label>
+
+          <select class="form-select" x-model="selectedCategory">
             <option value="">اختر نوع الخدمة...</option>
-            <option value="barber">صالون حلاقة</option>
-            <option value="carwash">غسيل سيارات</option>
+            <template x-for="t in businessTypes" :key="t.value">
+              <option :value="t.value" x-text="t.label"></option>
+            </template>
           </select>
         </div>
       </div>
@@ -49,7 +51,7 @@
         <div class="card-body">
           <div class="input-group">
             <span class="input-group-text bg-white"><i class="bi bi-search"></i></span>
-            <input type="text" class="form-control" placeholder="ابحث..." x-model="searchQuery" @input="filterBusinesses">
+            <input type="text" class="form-control" placeholder="ابحث..." x-model="searchQuery">
           </div>
         </div>
       </div>
@@ -94,7 +96,7 @@
 
             <!-- Wait Time -->
             <div class="small text-primary fw-semibold mb-3">
-              ⏱️ وقت الانتظار التقريبي: <span x-text="b.waitTime + ' دقيقة'"></span>
+              ⏱️ وقت الانتظار التقريبي: <span x-text="b.waitTimeMinutes + ' دقيقة'"></span>
             </div>
 
             <button class="select-btn w-100" @click="showServices(b)">
@@ -125,7 +127,7 @@
             <i class="bi bi-person-badge"></i> موقعك:
             <b x-text="'#' + selectedBusiness.queuePosition"></b>
             <br>
-            <span class="text-primary">⏱️ وقت الانتظار التقريبي: <b x-text="selectedBusiness.waitTime + ' دقيقة'"></b></span>
+            <span class="text-primary">⏱️ وقت الانتظار التقريبي: <b x-text="selectedBusiness.waitTimeMinutes + ' دقيقة'"></b></span>
           </div>
         </div>
       </div>
@@ -158,7 +160,7 @@
           <div class="mt-1">
             <i class="bi bi-clock"></i> 
             وقت الانتظار التقريبي: 
-            <b x-text="selectedBusiness.waitTime + ' دقيقة'"></b>
+            <b x-text="b.waitTimeMinutes + ' دقيقة'"></b>
           </div>
         </div>
       </div>

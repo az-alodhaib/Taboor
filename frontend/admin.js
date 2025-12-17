@@ -1,16 +1,55 @@
 const API_BASE = "http://localhost:3000";
 
-document.addEventListener("DOMContentLoaded", () => {
+// self-note: keep admin dropdown types synced with server
+let BUSINESS_TYPES = [];
+
+document.addEventListener("DOMContentLoaded", async () => {
+  await loadBusinessTypes();
   loadPendingBusinesses();
   loadPendingServices();
 });
 
+// Load business types (value/label) from backend
+async function loadBusinessTypes() {
+  try {
+    const res = await fetch(`${API_BASE}/meta/business-types`);
+    const json = await res.json();
+    if (res.ok && Array.isArray(json.businessTypes)) {
+      BUSINESS_TYPES = json.businessTypes;
+      return;
+    }
+  } catch (e) {
+    // ignore and use fallback
+  }
+
+  // fallback (keeps UI usable if backend route is missing)
+  BUSINESS_TYPES = [
+    { value: "barber", label: "صالون حلاقة" },
+    { value: "carwash", label: "غسيل سيارات" },
+    { value: "shop", label: "متجر" },
+    { value: "cafe", label: "مقهى" },
+    { value: "restaurant", label: "مطعم" },
+    { value: "salon", label: "صالون تجميل" },
+    { value: "clinic", label: "عيادة" }
+  ];
+}
+
+function renderBusinessTypeOptions(selectedValue) {
+  return BUSINESS_TYPES.map((t) => {
+    const sel = t.value === selectedValue ? "selected" : "";
+    return `<option value="${t.value}" ${sel}>${t.label}</option>`;
+  }).join("");
+}
+
+function getBusinessTypeLabel(value) {
+  const hit = BUSINESS_TYPES.find((t) => t.value === value);
+  return hit ? hit.label : (value || "");
+}
 
 // ==========================
 // Business requests
 // ==========================
 
-// Load pending businesses
 async function loadPendingBusinesses() {
   const listContainer = document.getElementById("admin-business-list");
   const messageContainer = document.getElementById("admin-business-message");
@@ -42,42 +81,42 @@ async function loadPendingBusinesses() {
       const body = document.createElement("div");
       body.className = "card-body";
 
-      // Card content for one business
       body.innerHTML = `
         <h5 class="card-title mb-1">${b.name}</h5>
-        <p class="card-subtitle text-muted mb-2">${b.category || "بدون تصنيف"}</p>
+        <p class="card-subtitle text-muted mb-2">${getBusinessTypeLabel(b.category) || "بدون تصنيف"}</p>
         <p class="mb-1"><i class="bi bi-geo-alt-fill"></i> ${b.address || "بدون عنوان"}</p>
         <p class="mb-3"><i class="bi bi-telephone"></i> ${b.phone || "بدون رقم"}</p>
-        <button class="btn btn-success w-100 mb-2 btn-approve" data-id="${b.id}">
-          <i class="bi bi-check-circle"></i> الموافقة على المنشأة
+
+        <div class="mb-3">
+          <label class="form-label mb-1">نوع المنشأة</label>
+          <select class="form-select" id="biz-type-${b.id}">
+            <option value="">اختر نوع المنشأة...</option>
+            ${renderBusinessTypeOptions(b.category)}
+          </select>
+          <small class="text-muted">سيتم حفظ النوع عند الموافقة.</small>
+        </div>
+
+        <button class="btn btn-success w-100 mb-2" onclick="approveBusiness(${b.id})">
+          <i class="bi bi-check2-circle me-1"></i> قبول
         </button>
-        <button class="btn btn-outline-danger w-100 btn-reject" data-id="${b.id}">
-          <i class="bi bi-x-circle"></i> رفض المنشأة
+
+        <button class="btn btn-outline-danger w-100" onclick="rejectBusiness(${b.id})">
+          <i class="bi bi-x-circle me-1"></i> رفض
         </button>
       `;
 
       card.appendChild(body);
       col.appendChild(card);
       listContainer.appendChild(col);
-
-      // Approve and Reject buttons for this business
-      const approveBtn = body.querySelector(".btn-approve");
-      const rejectBtn = body.querySelector(".btn-reject");
-
-      approveBtn.addEventListener("click", () => approveBusiness(b.id));
-      rejectBtn.addEventListener("click", () => rejectBusiness(b.id));
     });
   } catch (error) {
     console.error(error);
     messageContainer.innerHTML = `
-      <div class="alert alert-danger mb-0">
-        حدث خطأ أثناء تحميل المنشآت: ${error.message}
-      </div>
+      <div class="alert alert-danger">تعذر تحميل طلبات المنشآت: ${error.message}</div>
     `;
   }
 }
 
-// Approve one business
 async function approveBusiness(id) {
   const messageContainer = document.getElementById("admin-business-message");
 
@@ -86,12 +125,15 @@ async function approveBusiness(id) {
   }
 
   try {
+    const category = (document.getElementById(`biz-type-${id}`)?.value || "").trim();
+
     const res = await fetch(`${API_BASE}/admin/businesses/${id}/approve`, {
       method: "PATCH",
-      headers: { "Content-Type": "application/json" }
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ category })
     });
-    const json = await res.json();
 
+    const json = await res.json();
     if (!res.ok) throw new Error(json.error || "فشل في الموافقة على المنشأة");
 
     messageContainer.innerHTML = `
@@ -107,7 +149,6 @@ async function approveBusiness(id) {
   }
 }
 
-// Reject one business
 async function rejectBusiness(id) {
   const messageContainer = document.getElementById("admin-business-message");
 
@@ -120,8 +161,8 @@ async function rejectBusiness(id) {
       method: "PATCH",
       headers: { "Content-Type": "application/json" }
     });
-    const json = await res.json();
 
+    const json = await res.json();
     if (!res.ok) throw new Error(json.error || "فشل في رفض المنشأة");
 
     messageContainer.innerHTML = `
@@ -136,7 +177,6 @@ async function rejectBusiness(id) {
     `;
   }
 }
-
 
 // ==========================
 // Service requests
