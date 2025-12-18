@@ -37,7 +37,7 @@ app.use(express.urlencoded({ extended: true })); // optional for forms
 
 
 // self-note: serve frontend files (HTML/CSS/JS)
-const FRONTEND_DIR = path.join(__dirname, "forntend");
+const FRONTEND_DIR = path.join(__dirname, "frontend");
 app.use(express.static(FRONTEND_DIR));
 
 // self-note: open index.html when visiting the root URL
