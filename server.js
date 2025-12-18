@@ -8,6 +8,7 @@ const sqlite3 = require('sqlite3').verbose();  // Database to store user data
 const bcrypt = require('bcrypt');              // Tool to encrypt passwords
 const cors = require('cors');                  // Allow frontend to talk to backend
 const bodyParser = require('body-parser');     // Tool to read data from forms
+const path = require("path");
 
 // =============================================
 // STEP 2: Create the Application
@@ -33,6 +34,21 @@ app.use(express.json());
 // Allow server to read form data
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.urlencoded({ extended: true })); // optional for forms
+
+
+// self-note: serve frontend files (HTML/CSS/JS)
+const FRONTEND_DIR = path.join(__dirname, "forntend");
+app.use(express.static(FRONTEND_DIR));
+
+// self-note: open index.html when visiting the root URL
+app.get("/", (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "index.html"));
+});
+
+// self-note: keep the JSON test endpoint but move it away from "/"
+app.get("/health", (req, res) => {
+  res.json({ message: "Taboor Server is Running!" });
+});
 
 // ==========================
 // Business types (single source of truth)
