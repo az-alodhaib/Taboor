@@ -8,6 +8,7 @@ const sqlite3 = require('sqlite3').verbose();  // Database to store user data
 const bcrypt = require('bcrypt');              // Tool to encrypt passwords
 const cors = require('cors');                  // Allow frontend to talk to backend
 const bodyParser = require('body-parser');     // Tool to read data from forms
+const path = require("path");
 
 // =============================================
 // STEP 2: Create the Application
@@ -16,7 +17,8 @@ const bodyParser = require('body-parser');     // Tool to read data from forms
 const app = express();
 
 // Set the port number where server will run
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
+
 
 // =============================================
 // STEP 3: Setup Middleware
@@ -33,6 +35,10 @@ app.use(express.json());
 // Allow server to read form data
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.urlencoded({ extended: true })); // optional for forms
+
+// self-note: serve frontend files (HTML/CSS/JS)
+const FRONTEND_DIR = path.join(__dirname, "frontend");
+app.use(express.static(FRONTEND_DIR));
 
 // ==========================
 // Business types (single source of truth)
@@ -235,9 +241,14 @@ function allSQL(sql, params = []) {
 // URL: http://localhost:3000/
 // Method: GET
 // ---------------------------------------------
-app.get('/', (req, res) => {
-  res.json({ message: 'Taboor Server is Running!' });
+app.get("/", (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "index.html"));
 });
+
+app.get("/health", (req, res) => {
+  res.json({ message: "Taboor Server is Running!" });
+});
+
 
 // ---------------------------------------------
 // Route 2: Register New User
