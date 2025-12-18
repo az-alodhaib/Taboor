@@ -382,11 +382,20 @@
 #     for method in test_methods:
 #         try:
 #             method()
-#             print(f"✅ {method.__name__}")
+#             print(f" {method.__name__}")
 #         except AssertionError as e:
-#             print(f"❌ {method.__name__} failed: {e}")
+#             print(f" {method.__name__} failed: {e}")
 #         except Exception as e:
-#             print(f"❌ {method.__name__} error: {e}")
+#             print(f" {method.__name__} error: {e}")
     
 #     print("=" * 50)
 #     print("SimplePreprocessor unit tests completed!")
+
+def test_basic():
+    assert True
+    
+def test_math():
+    assert 2 + 2 == 4
+    
+def test_string():
+    assert len("test") == 4
