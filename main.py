@@ -19,10 +19,10 @@ def predict(request: PredictionRequest):
     try:
         prediction = manager.predict_from_customer_input(
             business_id=request.business_id,
-            arrival_hour=request.arrival_hour,
-            queue_length=request.queue_length,
-            service_type=request.service_type,
-            service_details=request.service_details,
+            arrival_hour=request.arrival_hour, # 11.45.29
+            queue_length=request.queue_length, # 7
+            service_type=request.service_type, # barber , workshop , car shop
+            service_details=request.service_details, # (haircut , bread , haircut and bread) , (big car , small car) , (oil change)
             avg_service_time=request.avg_service_time,          
             hourly_avg_service_time=request.hourly_avg_service_time  
         )

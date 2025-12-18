@@ -8,7 +8,6 @@ const sqlite3 = require('sqlite3').verbose();  // Database to store user data
 const bcrypt = require('bcrypt');              // Tool to encrypt passwords
 const cors = require('cors');                  // Allow frontend to talk to backend
 const bodyParser = require('body-parser');     // Tool to read data from forms
-const path = require("path");
 
 // =============================================
 // STEP 2: Create the Application
@@ -34,21 +33,6 @@ app.use(express.json());
 // Allow server to read form data
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.urlencoded({ extended: true })); // optional for forms
-
-
-// self-note: serve frontend files (HTML/CSS/JS)
-const FRONTEND_DIR = path.join(__dirname, "frontend");
-app.use(express.static(FRONTEND_DIR));
-
-// self-note: open index.html when visiting the root URL
-app.get("/", (req, res) => {
-  res.sendFile(path.join(FRONTEND_DIR, "index.html"));
-});
-
-// self-note: keep the JSON test endpoint but move it away from "/"
-app.get("/health", (req, res) => {
-  res.json({ message: "Taboor Server is Running!" });
-});
 
 // ==========================
 // Business types (single source of truth)
@@ -195,22 +179,23 @@ db.run(`
   else     console.log('Appointments table ready');
 });
 
-//  historical_data
+// historical_data
 db.run(`
   CREATE TABLE IF NOT EXISTS historical_data (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    business_id INTEGER NOT NULL,  -- references businesses table
+    business_id INTEGER NOT NULL,
     arrival_time DATETIME,
     queue_length INTEGER,
     service_type TEXT,
     service_details TEXT,
-    wait_time INTEGER,  -- actual wait time
+    wait_time INTEGER,          -- total wait (queue + service)
+    service_duration INTEGER,   -- ADD THIS: actual service time only
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (business_id) REFERENCES businesses(id)
   )
 `, (err) => {
   if (err) console.error('Error creating historical_data table:', err.message);
-  else     console.log('Historical Data table ready');
+  else console.log('Historical Data table ready with service_duration');
 });
 
 // STEP DATABASE
@@ -619,6 +604,74 @@ app.patch('/queues/:queueId/status', async (req, res) => {
     res.json({ message: 'Queue status updated', queue });
   } catch {
     res.status(500).json({ error: 'Failed to update status' });
+  }
+});
+
+
+// =============================================
+// ML Prediction Endpoint
+// =============================================
+app.post('/predict-wait', async (req, res) => {
+  const { business_id, arrival_time, queue_length, service_type, service_details } = req.body;
+
+  try {
+    // 1. Extract arrival_hour from arrival_time
+    const arrivalDate = new Date(arrival_time);
+    const arrival_hour = arrivalDate.getHours();
+
+    // 2. Get avg_service_time from historical data (using service_duration)
+    const serviceAvg = await getSQL(
+      `SELECT AVG(service_duration) as avg_time 
+       FROM historical_data 
+       WHERE business_id = ? AND service_type = ? AND service_details = ?`,
+      [business_id, service_type, service_details]
+    );
+    const avg_service_time = serviceAvg?.avg_time || 30;
+
+    // 3. Get hourly_avg_service_time from historical data (using service_duration)
+    const hourlyAvg = await getSQL(
+      `SELECT AVG(service_duration) as hourly_avg 
+       FROM historical_data 
+       WHERE business_id = ? AND strftime('%H', arrival_time) = ?`,
+      [business_id, String(arrival_hour)]
+    );
+    const hourly_avg_service_time = hourlyAvg?.hourly_avg || 30;
+
+    // 4. Call FastAPI with all 7 parameters
+    const response = await fetch('http://localhost:8000/predict', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        business_id,
+        arrival_hour,
+        queue_length,
+        service_type,
+        service_details,
+        avg_service_time,
+        hourly_avg_service_time
+      })
+    });
+
+    const result = await response.json();
+    if (result.error) throw new Error(result.error);
+
+    // 5. Store in appointments table
+    const insertResult = await runSQL(
+      `INSERT INTO appointments 
+      (business_id, arrival_time, queue_length, service_type, service_details, predicted_wait) 
+      VALUES (?, ?, ?, ?, ?, ?)`,
+      [business_id, arrival_time, queue_length, service_type, service_details, result.predicted_wait_minutes]
+    );
+
+    // 6. Return to frontend
+    res.json({
+      predicted_wait_minutes: result.predicted_wait_minutes,
+      appointment_id: insertResult.lastID
+    });
+
+  } catch (error) {
+    console.error('Prediction error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
@@ -1220,14 +1273,15 @@ app.get('/appointments', async (_req, res) => {
 
 // GET & POST historical_data
 app.post('/historical_data', async (req, res) => {
-  const { business_id, arrival_time, queue_length, service_type, service_details, wait_time } = req.body;
+  const { business_id, arrival_time, queue_length, service_type, service_details, wait_time, service_duration } = req.body;
   if (!business_id || !arrival_time || !queue_length) return res.status(400).json({ error: 'Required fields missing' });
 
   try {
     const result = await runSQL(
-      `INSERT INTO historical_data (business_id, arrival_time, queue_length, service_type, service_details, wait_time)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [business_id, arrival_time, queue_length, service_type, service_details, wait_time]
+      `INSERT INTO historical_data 
+       (business_id, arrival_time, queue_length, service_type, service_details, wait_time, service_duration)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [business_id, arrival_time, queue_length, service_type, service_details, wait_time, service_duration || null]
     );
     const historicalData = await getSQL(`SELECT * FROM historical_data WHERE id = ?`, [result.lastID]);
     res.status(201).json({ message: 'Historical data created', historicalData });
