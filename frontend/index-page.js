@@ -1,3 +1,4 @@
+const API_BASE = window.location.origin;
 // Wait for page to load
 document.addEventListener('DOMContentLoaded', function() {
     
@@ -12,7 +13,7 @@ document.addEventListener('DOMContentLoaded', function() {
         e.preventDefault();
         loginForm.classList.add('d-none');
         registerForm.classList.remove('d-none');
-     window.location.showLoginLink="home_page.html";
+        window.location.href = "home_page.html";
     });
 
     // Show login form  
@@ -29,7 +30,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     const email = document.getElementById('email-log').value;
     const password = document.getElementById('pass-log').value;
-    const response = await fetch("http://localhost:3000/login", {
+    const response = await fetch(`${API_BASE}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password })
@@ -55,7 +56,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const password = document.getElementById('pass-reg').value;
 
         //send post request
-        const response= await fetch('http://localhost:3000/register', {
+        const response= await fetch(`${API_BASE}/register`, {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({name,email,phone,password})

@@ -11,7 +11,8 @@ let gUserInfoWindow = null;
 // ==========================
 // Configurations
 // ==========================
-const API_BASE = "http://localhost:3000";
+const API_BASE = window.location.origin;
+
 
 // Set tax rate here once; currently 15%
 // canceled const TAX_RATE = 0.15;

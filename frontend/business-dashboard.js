@@ -1,5 +1,5 @@
 // self-note: base API URL for all backend calls
-const API_BASE = "http://localhost:3000";
+const API_BASE = window.location.origin;
 
 document.addEventListener("DOMContentLoaded", async () => {
   const params = new URLSearchParams(window.location.search);
