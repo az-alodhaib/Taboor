@@ -136,7 +136,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const status = String(rawStatus || "").toLowerCase();
 
         if (status === "approved" || status === "active" || status === "1") {
-          window.location.href = "business_dashboard.html";
+          window.location.href = "/business/dashboard";
         } else if (status === "pending" || status === "binding" || status === "under_review" || status === "0") {
           alert("طلب إنشاء المنشأة الخاص بك قيد المراجعة، يرجى المحاولة لاحقًا.");
         } else if (status === "rejected" || status === "denied") {

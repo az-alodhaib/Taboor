@@ -8,7 +8,9 @@ const sqlite3 = require('sqlite3').verbose();  // Database to store user data
 const bcrypt = require('bcrypt');              // Tool to encrypt passwords
 const cors = require('cors');                  // Allow frontend to talk to backend
 const bodyParser = require('body-parser');     // Tool to read data from forms
-const path = require("path");
+const path = require("path"); // self-note: path helper for HTML serving
+const session = require("express-session"); // self-note: server-side login memory
+
 
 // =============================================
 // STEP 2: Create the Application
@@ -36,9 +38,60 @@ app.use(express.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.urlencoded({ extended: true })); // optional for forms
 
-// self-note: serve frontend files (HTML/CSS/JS)
+
+// self-note: sessions (server remembers logged-in user/business/admin)
+app.use(
+  session({
+    secret: process.env.SESSION_SECRET || "taboor-dev-secret",
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      httpOnly: true,
+      sameSite: "lax",
+      secure: false
+    }
+  })
+);
+
+//define frontend folder
 const FRONTEND_DIR = path.join(__dirname, "frontend");
+
+// self-note: block direct access to private HTML files
+app.get(
+  ["/home_page.html", "/business_dashboard.html", "/admin.html"],
+  (req, res, next) => {
+    if (req.path === "/admin.html") {
+      if (!req.session.isAdmin) return res.redirect("/index.html");
+      return next();
+    }
+
+    if (req.path === "/business_dashboard.html") {
+      if (!req.session.businessId) return res.redirect("/businesses_index.html");
+      return next();
+    }
+
+    // customer private page
+    if (!req.session.userId) return res.redirect("/index.html");
+    next();
+  }
+);
+
+// self-note: serve static files
 app.use(express.static(FRONTEND_DIR));
+
+// here we will add protected routes
+app.get("/home", requireCustomer, (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "home_page.html"));
+});
+
+app.get("/business/dashboard", requireBusiness, (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "business_dashboard.html"));
+});
+
+app.get("/admin", requireAdmin, (req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "admin.html"));
+});
+
 
 // ==========================
 // Business types (single source of truth)
@@ -51,10 +104,6 @@ const BUSINESS_TYPES = [
   { value: "restaurant", label: "مطعم" },
   { value: "clinic", label: "عيادة" }
 ];
-
-app.get("/meta/business-types", (req, res) => {
-  res.json({ businessTypes: BUSINESS_TYPES });
-});
 
 // =============================================
 // STEP 4: Setup Database
@@ -230,6 +279,23 @@ function allSQL(sql, params = []) {
   });
 }
 
+//--------------------------------------
+
+// self-note: server-side guards (real protection)
+function requireCustomer(req, res, next) {
+  if (!req.session.userId) return res.redirect("/index.html");
+  next();
+}
+
+function requireBusiness(req, res, next) {
+  if (!req.session.businessId) return res.redirect("/businesses_index.html");
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  if (!req.session.isAdmin) return res.redirect("/index.html");
+  next();
+}
 
 // =============================================
 // STEP 5: API Routes (Endpoints)
@@ -299,6 +365,24 @@ app.post('/register', async (req, res) => {
   }
 });
 
+//--------------------------------------------------
+//for admin
+app.use("/admin", requireAdmin);
+
+
+app.post("/admin/login", (req, res) => {
+  const { email, password } = req.body || {};
+
+  // self-note: demo credentials (change later)
+  if (email === "admin@taboor.com" && password === "aziz1") {
+    req.session.isAdmin = true;
+    return res.json({ message: "Admin logged in" });
+  }
+
+  res.status(401).json({ error: "Unauthorized" });
+});
+
+
 // ---------------------------------------------
 // Route 3: Login User
 // URL: http://localhost:3000/login
@@ -341,6 +425,8 @@ app.post('/login', (req, res) => {
     }
 
     // Success! Login approved
+    req.session.userId = user.id; // self-note: customer session
+
     res.json({
       message: 'تم تسجيل الدخول بنجاح',
       user: {
@@ -469,20 +555,26 @@ app.post('/business/login', async (req, res) => {
 
     // map is_active to status
     let status;
-    if (business.is_active === 1) status = 'approved';
-    else if (business.is_active === 0) status = 'pending';
-    else if (business.is_active === -1) status = 'rejected';
-    else status = 'unknown';
+    if (business.is_active === 1) status = "approved";
+    else if (business.is_active === 0) status = "pending";
+    else if (business.is_active === -1) status = "rejected";
+    else status = "unknown";
 
+    // self-note: only approved businesses get a server session
+    if (status === "approved") {
+    req.session.businessId = business.id;
+    }
+
+    // self-note: always return status so UI can show pending/rejected
     return res.json({
       status,
       business: {
-        id: business.id,
+         id: business.id,
         name: business.name,
         email: business.email,
         category: business.category,
         is_active: business.is_active
-      }
+    }
     });
   } catch (error) {
     console.error(error);

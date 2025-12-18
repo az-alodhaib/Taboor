@@ -41,7 +41,7 @@ document.addEventListener("DOMContentLoaded", function () {
 
       if (response.ok) {
         alert(result.message);
-        window.location.href = "home_page.html";
+        window.location.href = "/home";
       } else {
         alert(result.error);
       }
