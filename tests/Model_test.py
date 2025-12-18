@@ -391,11 +391,5 @@
 #     print("=" * 50)
 #     print("SimplePreprocessor unit tests completed!")
 
-def test_basic():
-    assert True
-    
-def test_math():
-    assert 2 + 2 == 4
-    
-def test_string():
-    assert len("test") == 4
+def test_addition():
+    assert 1 + 1 == 2
