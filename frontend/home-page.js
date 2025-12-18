@@ -404,6 +404,47 @@ function HomePage() {
       }
     },
 
+    // ===== ML PREDICTION METHOD =====
+    async getMLPrediction(business, chosenServices) {
+      try {
+        const payload = {
+          business_id: business.id,
+          arrival_time: new Date().toISOString(),
+          queue_length: business.queuePeople || 0,
+          service_type: chosenServices[0]?.name || '',
+          service_details: chosenServices.map(s => s.name).join(', ')
+        };
+
+        console.log('Calling ML with:', payload);
+
+        const response = await fetch(`${API_BASE}/predict-wait`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const result = await response.json();
+        
+        if (result.error) throw new Error(result.error);
+        
+        console.log('ML predicted:', result.predicted_wait_minutes, 'minutes');
+        return result.predicted_wait_minutes;
+        
+      } catch (error) {
+        console.error('ML prediction failed:', error);
+        return null;
+      }
+    },
+    // ===== END ML METHOD =====
+
+    // Update total cost including tax
+    updateTotals() {
+      const selectedServices = this.businessServices.filter(s => s.selected);
+      const subtotal = selectedServices.reduce((sum, s) => sum + (Number(s.price) || 0), 0);
+      const total = subtotal;
+      this.totalWithTax = total.toFixed(2);
+    },
+
     // Update total cost including tax
     updateTotals() {
       const selectedServices = this.businessServices.filter(s => s.selected);
@@ -413,11 +454,13 @@ function HomePage() {
     },
     
     // Confirm selection and proceed
-    confirmSelection() {
+    async confirmSelection() {
       if (!this.selectedBusiness) {
         alert("الرجاء اختيار مزود خدمة أولاً.");
         return;
       }
+
+      
 
       const chosenServices = this.businessServices.filter(s => s.selected);
       if (chosenServices.length === 0) {
@@ -426,6 +469,17 @@ function HomePage() {
       }
 
       const b = this.selectedBusiness;
+      
+        // ===== NEW: ADD ML LOGIC HERE =====
+      let mlPrediction = null;
+      try {
+        mlPrediction = await this.getMLPrediction(b, chosenServices);
+      } catch (err) {
+        console.warn('ML call failed, using queue estimate:', err);
+      }
+      
+      let finalWaitMinutes = mlPrediction !== null ? mlPrediction : Number(b.waitTimeMinutes || 0);
+      // ===== END ML LOGIC =====
 
       const payload = {
         business: {
@@ -457,7 +511,7 @@ function HomePage() {
         submissionMinutes: chosenServices.reduce((sum, s) => sum + (Number(s.duration_minutes) || 0), 0),
 
         // self-note: waitMinutes = queue waiting time until my turn starts (from backend overview)
-        waitMinutes: Number(b.waitTimeMinutes || 0),
+        // waitMinutes: Number(b.waitTimeMinutes || 0),
 
         // self-note: travelMinutes = ETA from my current location -> business (approx for now)
         travelMinutes: Number(b.travelMinutes || 0),
