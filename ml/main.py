@@ -1,6 +1,7 @@
-from fastapi import FastAPI, Body
+from fastapi import FastAPI, Body, Response
 from ml.ml_model import ModelManager
 from pydantic import BaseModel
+
 
 app = FastAPI()
 manager = ModelManager()
@@ -34,9 +35,9 @@ def predict(request: PredictionRequest):
 def root():
     return {"status": "ok", "service": "taboor-ml"}
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+@app.head("/")
+def head_root():
+    return Response(status_code=200)
 
 
 @app.get("/health")
