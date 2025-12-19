@@ -11,6 +11,9 @@ const bodyParser = require('body-parser');     // Tool to read data from forms
 const path = require("path"); // self-note: path helper for HTML serving
 const session = require("express-session"); // self-note: server-side login memory
 
+// ML service base URL (single source of truth)
+const ML_URL = process.env.ML_URL || "https://taboor-ml.onrender.com";
+
 
 // =============================================
 // STEP 2: Create the Application
@@ -367,9 +370,6 @@ app.post('/register', async (req, res) => {
 
 //--------------------------------------------------
 //for admin
-app.use("/admin", requireAdmin);
-
-
 app.post("/admin/login", (req, res) => {
   const { email, password } = req.body || {};
 
@@ -381,6 +381,8 @@ app.post("/admin/login", (req, res) => {
 
   res.status(401).json({ error: "Unauthorized" });
 });
+
+app.use("/admin", requireAdmin);
 
 
 // ---------------------------------------------
@@ -739,9 +741,9 @@ app.post('/predict-wait', async (req, res) => {
       [business_id, String(arrival_hour)]
     );
     const hourly_avg_service_time = hourlyAvg?.hourly_avg || 30;
-
+    
     // 4. Call FastAPI with all 7 parameters
-    const response = await fetch('http://localhost:8000/predict', {
+    const response = await fetch(`${ML_URL}/predict`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
