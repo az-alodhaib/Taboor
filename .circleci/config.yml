@@ -18,7 +18,7 @@ jobs:
             fi
             echo "Checking Python files:"
             error_found=false
-            for file in $python_files; do
+            for file in "$python_files"; do
               # SIMPLE Python syntax check without complex indentation
               if python -m py_compile "$file" 2>/dev/null; then
                 echo "✅ $file - Syntax OK"
@@ -65,7 +65,7 @@ jobs:
             fi
             echo "✅ All JavaScript files have valid syntax"
 
-    run-python-tests:
+  run-python-tests:
     docker:
       - image: cimg/python:3.9
     steps:
@@ -77,9 +77,9 @@ jobs:
             mkdir -p tests
             # Write test directly in Python
             python3 -c "
-            with open('tests/test_simple.py', 'w') as f:
-                f.write('def test_pass():\\n    assert 1 + 1 == 2\\n')
-            "
+with open('tests/test_simple.py', 'w') as f:
+    f.write('def test_pass():\\n    assert 1 + 1 == 2\\n')
+"
             # Run the test
             python3 -m pytest tests/test_simple.py -v
 
@@ -106,7 +106,7 @@ jobs:
             echo "Running tests: $js_test_files"
             for test_file in $js_test_files; do
               echo "Running: $test_file"
-              node $test_file
+              node "$test_file"
             done
 
 workflows:
