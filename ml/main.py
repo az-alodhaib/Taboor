@@ -33,3 +33,11 @@ def predict(request: PredictionRequest):
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+@app.get("/")
+def root():
+    return {"status": "ok", "service": "taboor-ml"}
+
+@app.get("/health")
+def health():
+    return {"ok": True}
