@@ -1,5 +1,5 @@
 from fastapi import FastAPI, Body
-from ML_model import ModelManager
+from .ML_model import ModelManager
 from pydantic import BaseModel
 
 app = FastAPI()
