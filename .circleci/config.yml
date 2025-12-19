@@ -68,6 +68,10 @@ jobs:
     steps:
       - checkout
       - run:
+          name: Install pytest
+          command: |
+            pip install pytest
+      - run:
           name: Run simple Python tests
           command: |
             echo "Running simple Python tests"
