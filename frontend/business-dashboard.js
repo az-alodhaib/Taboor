@@ -449,17 +449,18 @@ async function createNewService(businessId) {
 
   try {
     // self-note: backend uses /services + business_id field
-    const res = await fetch(`${API_BASE}/services`, {
+   const res = await fetch(`${API_BASE}/services`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "include", // REQUIRED for sessions!!!
       body: JSON.stringify({
-        business_id: businessId,        // self-note: backend uses this to link to business
-        name,
-        description,
-        duration_minutes: duration,
-        price
+          name,
+          description,
+          duration_minutes: duration,
+          price
       })
     });
+
 
     const data = await res.json();
     if (!res.ok) {

@@ -10,6 +10,9 @@ const cors = require('cors');                  // Allow frontend to talk to back
 const bodyParser = require('body-parser');     // Tool to read data from forms
 const path = require("path"); // self-note: path helper for HTML serving
 const session = require("express-session"); // self-note: server-side login memory
+const crypto = require("crypto");
+const nodemailer = require("nodemailer");
+
 
 // ML service base URL (single source of truth)
 const ML_URL = process.env.ML_URL || "https://taboor-ml.onrender.com";
@@ -108,6 +111,11 @@ const BUSINESS_TYPES = [
   { value: "clinic", label: "عيادة" }
 ];
 
+// Meta endpoint for admin dropdown
+app.get("/meta/business-types", (req, res) => {
+  res.json({ businessTypes: BUSINESS_TYPES });
+});
+
 // =============================================
 // STEP 4: Setup Database
 // =============================================
@@ -120,6 +128,18 @@ const db = new sqlite3.Database('./taboor.db', (err) => {
   }
 });
 
+// =============================================
+// DB MIGRATION: Email verification columns
+// =============================================
+
+db.run(`ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0`, () => {});
+db.run(`ALTER TABLE users ADD COLUMN email_verify_token TEXT`, () => {});
+db.run(`ALTER TABLE users ADD COLUMN email_verify_expires INTEGER`, () => {});
+
+db.run(`ALTER TABLE businesses ADD COLUMN email_verified INTEGER DEFAULT 0`, () => {});
+db.run(`ALTER TABLE businesses ADD COLUMN email_verify_token TEXT`, () => {});
+db.run(`ALTER TABLE businesses ADD COLUMN email_verify_expires INTEGER`, () => {});
+
 // Create users table if it doesn't exist
 // This table will store: id, name, email, phone, password
 db.run(`
@@ -129,6 +149,9 @@ db.run(`
     email TEXT UNIQUE NOT NULL,
     phone TEXT,
     password TEXT NOT NULL,
+    email_verified INTEGER DEFAULT 0,
+    email_verify_token TEXT,
+    email_verify_expires INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `, (err) => {
@@ -281,6 +304,76 @@ function allSQL(sql, params = []) {
     db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
   });
 }
+// =============================================
+// GLOBAL UNIQUENESS HELPERS (users + businesses)
+// =============================================
+
+async function isEmailTaken(email) {
+  const e = String(email || "").trim().toLowerCase();
+  if (!e) return false;
+
+  const u = await getSQL(`SELECT id FROM users WHERE LOWER(email) = ? LIMIT 1`, [e]);
+  if (u) return true;
+
+  const b = await getSQL(`SELECT id FROM businesses WHERE LOWER(email) = ? LIMIT 1`, [e]);
+  return !!b;
+}
+
+async function isPhoneTaken(phone) {
+  const p = String(phone || "").trim();
+  if (!p) return false;
+
+  const u = await getSQL(`SELECT id FROM users WHERE phone = ? LIMIT 1`, [p]);
+  if (u) return true;
+
+  const b = await getSQL(`SELECT id FROM businesses WHERE phone = ? LIMIT 1`, [p]);
+  return !!b;
+}
+
+// ===============================
+// Email verification helpers
+// ===============================
+
+const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
+
+const mailTransporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST,
+  port: Number(process.env.SMTP_PORT || 465),
+  secure: String(process.env.SMTP_SECURE || "true") === "true",
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASS
+  }
+});
+
+const MAIL_FROM = process.env.MAIL_FROM || process.env.SMTP_USER;
+
+// self-note: 24h token
+function makeVerifyToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+function makeVerifyExpiresMs(hours = 24) {
+  return Date.now() + hours * 60 * 60 * 1000;
+}
+
+async function sendVerifyEmail(to, verifyUrl, kind) {
+  const subject = "Taboor - Verify your email";
+  const html = `
+    <div style="font-family:Arial,sans-serif;line-height:1.6">
+      <h2>Email Verification</h2>
+      <p>You created a ${kind} account in Taboor.</p>
+      <p>Click this link to verify your email (expires in 24 hours):</p>
+      <p><a href="${verifyUrl}">${verifyUrl}</a></p>
+    </div>
+  `;
+
+  await mailTransporter.sendMail({
+    from: MAIL_FROM,
+    to,
+    subject,
+    html
+  });
+}
 
 //--------------------------------------
 
@@ -326,50 +419,74 @@ app.get("/health", (req, res) => {
 // Data needed: name, email, phone, password
 // ---------------------------------------------
 app.post('/register', async (req, res) => {
-  console.log(req.body);
-  // Get data from the form
-  const { name, email, phone, password } = req.body;
+  const name = String(req.body?.name || "").trim();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const phone = String(req.body?.phone || "").trim();
+  const password = String(req.body?.password || "");
 
-  // Check if all fields are provided
+  // required fields
   if (!name || !email || !password) {
-    return res.status(400).json({
-      error: 'يرجى ملء جميع الحقول المطلوبة'
-    });
+    return res.status(400).json({ error: 'يرجى ملء جميع الحقول المطلوبة' });
+  }
+
+  // password rule
+  if (password.length < 8) {
+    return res.status(400).json({ error: "كلمة المرور يجب أن تكون 8 أحرف أو أكثر" });
   }
 
   try {
-    // Encrypt the password for security
-    // Number 10 means how strong the encryption is
+    // GLOBAL uniqueness: email
+    if (await isEmailTaken(email)) {
+      return res.status(400).json({ error: "البريد الإلكتروني مستخدم بالفعل" });
+    }
+
+    // GLOBAL uniqueness: phone (only if provided)
+    if (phone && await isPhoneTaken(phone)) {
+      return res.status(400).json({ error: "رقم الجوال مستخدم بالفعل" });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Insert new user into database
-    const query = `INSERT INTO users (name, email, phone, password) VALUES (?, ?, ?, ?)`;
+    // self-note: create verify token for this new user
+    const verifyToken = makeVerifyToken();
+    const verifyExpires = makeVerifyExpiresMs(24);
 
-    db.run(query, [name, email, phone, hashedPassword], function (err) {
-      if (err) {
-        // If email already exists, show error
-        if (err.message.includes('UNIQUE')) {
-          return res.status(400).json({
-            error: 'البريد الإلكتروني مستخدم بالفعل'
-          });
-        }
-        return res.status(500).json({ error: 'خطأ في التسجيل' });
-      }
+    // IMPORTANT: use the NEW insert that includes verification fields
+    const result = await runSQL(
+      `INSERT INTO users
+       (name, email, phone, password, email_verified, email_verify_token, email_verify_expires)
+       VALUES (?, ?, ?, ?, 0, ?, ?)`,
+      [name, email, phone || null, hashedPassword, verifyToken, verifyExpires]
+    );
 
-      // Success! Return user ID
-      res.status(201).json({
-        message: 'تم إنشاء الحساب بنجاح',
-        userId: this.lastID
-      });
+    // self-note: send verification email (account can exist even if email fails)
+    try {
+      const verifyUrl = `${BASE_URL}/verify/user?token=${verifyToken}`;
+      await sendVerifyEmail(email, verifyUrl, "user");
+    } catch (mailErr) {
+      console.error("Email send failed:", mailErr);
+    }
+
+    return res.status(201).json({
+      message: 'تم إنشاء الحساب بنجاح. تم إرسال رابط التحقق إلى بريدك الإلكتروني.',
+      userId: result.lastID
     });
 
-  } catch (error) {
-    res.status(500).json({ error: 'خطأ في الخادم' });
+  } catch (err) {
+    console.error(err);
+
+    if (String(err.message || "").includes("UNIQUE")) {
+      return res.status(400).json({ error: "البريد الإلكتروني مستخدم بالفعل" });
+    }
+
+    return res.status(500).json({ error: 'خطأ في الخادم' });
   }
 });
 
+
+
 //--------------------------------------------------
-//for admin
+//for admin login(Will be added later)
 app.post("/admin/login", (req, res) => {
   const { email, password } = req.body || {};
 
@@ -416,6 +533,10 @@ app.post('/login', (req, res) => {
         error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة'
       });
     }
+
+    if (user.email_verified !== 1) {
+      return res.status(403).json({ error: "يرجى تفعيل البريد الإلكتروني أولاً" });
+    }  
 
     // Check if password matches
     const passwordMatch = await bcrypt.compare(password, user.password);
@@ -467,41 +588,52 @@ app.get('/users', (req, res) => {
 
 // BUSINESS REGISTER – uses businesses.email + businesses.password
 app.post('/business/register', async (req, res) => {
-  const {
-    name,
-    email,
-    password,
-    category,
-    address,
-    latitude,
-    longitude,
-    phone
-  } = req.body;
+  const name = String(req.body?.name || "").trim();
+  const email = String(req.body?.email || "").trim().toLowerCase();
+  const password = String(req.body?.password || "");
 
-  // simple required fields check
+  const category = req.body?.category ?? null;
+  const address = req.body?.address ?? null;
+  const latitude = req.body?.latitude ?? null;
+  const longitude = req.body?.longitude ?? null;
+
+  const phone = String(req.body?.phone || "").trim();
+
+  // required fields
   if (!name || !email || !password) {
     return res.status(400).json({
       error: 'Business name, email, and password are required'
     });
   }
 
+  // password rule
+  if (password.length < 8) {
+    return res.status(400).json({ error: "كلمة المرور يجب أن تكون 8 أحرف أو أكثر" });
+  }
+
   try {
-    // hash password before saving
+    // GLOBAL uniqueness: email
+    if (await isEmailTaken(email)) {
+      return res.status(400).json({ error: "البريد الإلكتروني مستخدم بالفعل" });
+    }
+
+    // GLOBAL uniqueness: phone (only if provided)
+    if (phone && await isPhoneTaken(phone)) {
+      return res.status(400).json({ error: "رقم الجوال مستخدم بالفعل" });
+    }
+
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // self-note: create verify token for this business
+    const verifyToken = makeVerifyToken();
+    const verifyExpires = makeVerifyExpiresMs(24);
+
+    // IMPORTANT: insert verification fields
     const result = await runSQL(
       `INSERT INTO businesses (
-         name,
-         email,
-         password,
-         category,
-         address,
-         latitude,
-         longitude,
-         phone,
-         is_active
-       )
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0)`,
+         name, email, password, category, address, latitude, longitude, phone, is_active,
+         email_verified, email_verify_token, email_verify_expires
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, ?, ?)`,
       [
         name,
         email,
@@ -510,19 +642,36 @@ app.post('/business/register', async (req, res) => {
         address,
         latitude,
         longitude,
-        phone
+        phone || null,
+        verifyToken,
+        verifyExpires
       ]
     );
 
+    // self-note: send verification email
+    try {
+      const verifyUrl = `${BASE_URL}/verify/business?token=${verifyToken}`;
+      await sendVerifyEmail(email, verifyUrl, "business");
+    } catch (mailErr) {
+      console.error("Email send failed:", mailErr);
+    }
+
     return res.status(201).json({
-      message: 'Business created (pending)',
+      message: 'Business created (pending). Verification email sent.',
       business_id: result.lastID
     });
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error(err);
+
+    if (String(err.message || "").includes("UNIQUE")) {
+      return res.status(400).json({ error: "البريد الإلكتروني مستخدم بالفعل" });
+    }
+
     return res.status(500).json({ error: 'Failed to create business' });
   }
 });
+
+
 
 // BUSINESS LOGIN – checks email + password from businesses table
 app.post('/business/login', async (req, res) => {
@@ -545,6 +694,10 @@ app.post('/business/login', async (req, res) => {
       return res.status(401).json({
         error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة'
       });
+    }
+
+    if (business.email_verified !== 1) {
+        return res.status(403).json({ error: "يرجى تفعيل البريد الإلكتروني أولاً" });
     }
 
     // compare password
@@ -603,26 +756,50 @@ app.get('/businesses', async (_req, res) => {
 // ---------- Services ----------
 
 // POST /services
-// Add a service for a business as "pending" (is_active = 0).
-app.post('/services', async (req, res) => {
-  const { business_id, name, description, duration_minutes, price } = req.body;
-  if (!business_id || !name) return res.status(400).json({ error: 'business_id and name are required' });
+// Create service request (pending) for logged-in business only
+app.post('/services', requireBusiness, async (req, res) => {
+  const { name, description, duration_minutes, price } = req.body || {};
+
+  // IMPORTANT: business_id comes from session, not frontend
+  const business_id = req.session.businessId;
+
+  if (!business_id) {
+    return res.status(401).json({ error: "Unauthorized" });
+  }
+
+  if (!name || name.trim() === "") {
+    return res.status(400).json({ error: "Service name is required" });
+  }
 
   try {
     const result = await runSQL(
-      `INSERT INTO services (business_id, name, description, duration_minutes, price, is_active)
+      `INSERT INTO services 
+       (business_id, name, description, duration_minutes, price, is_active)
        VALUES (?, ?, ?, ?, ?, 0)`,
-      [business_id, name, description, duration_minutes || 15, price || 0]
+      [
+        business_id,
+        name.trim(),
+        description || null,
+        Number(duration_minutes || 15),
+        Number(price || 0)
+      ]
     );
 
-    const service = await getSQL(`SELECT * FROM services WHERE id = ?`, [result.lastID]);
+    const service = await getSQL(
+      `SELECT * FROM services WHERE id = ?`,
+      [result.lastID]
+    );
 
-    res.status(201).json({ message: 'Service created (pending)', service });
+    res.status(201).json({
+      message: "Service request sent (pending approval)",
+      service
+    });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Failed to create service' });
+    res.status(500).json({ error: "Failed to create service" });
   }
 });
+
 
 
 
@@ -717,68 +894,107 @@ app.patch('/queues/:queueId/status', async (req, res) => {
 // ML Prediction Endpoint
 // =============================================
 app.post('/predict-wait', async (req, res) => {
-  const { business_id, arrival_time, queue_length, service_type, service_details } = req.body;
+  const business_id = req.body?.business_id;
+  const arrival_time = req.body?.arrival_time;
+  const queue_length = req.body?.queue_length;
+  const service_type = req.body?.service_type;
+  const service_details = req.body?.service_details;
 
   try {
-    // 1. Extract arrival_hour from arrival_time
+    // self-note: basic input sanity (avoid Date invalid + ML schema errors)
+    if (business_id === undefined || business_id === null) {
+      return res.status(400).json({ error: "business_id is required" });
+    }
+    if (!arrival_time) {
+      return res.status(400).json({ error: "arrival_time is required" });
+    }
+    if (queue_length === undefined || queue_length === null) {
+      return res.status(400).json({ error: "queue_length is required" });
+    }
+
+    // self-note: normalize service strings (ML expects strings even if empty)
+    const st = String(service_type || "").trim();
+    const sd = String(service_details || "").trim();
+
+    // self-note: parse arrival_time and derive arrival_hour feature
     const arrivalDate = new Date(arrival_time);
+    if (Number.isNaN(arrivalDate.getTime())) {
+      return res.status(400).json({ error: "arrival_time must be a valid date string" });
+    }
     const arrival_hour = arrivalDate.getHours();
 
-    // 2. Get avg_service_time from historical data (using service_duration)
+    // self-note: avg service duration for this business+service combo (fallback if no history)
     const serviceAvg = await getSQL(
-      `SELECT AVG(service_duration) as avg_time 
-       FROM historical_data 
+      `SELECT AVG(service_duration) as avg_time
+       FROM historical_data
        WHERE business_id = ? AND service_type = ? AND service_details = ?`,
-      [business_id, service_type, service_details]
+      [business_id, st, sd]
     );
-    const avg_service_time = serviceAvg?.avg_time || 30;
+    const avg_service_time = Number(serviceAvg?.avg_time) || 30;
 
-    // 3. Get hourly_avg_service_time from historical data (using service_duration)
+    // self-note: avg service duration by arrival hour (fallback if no history)
     const hourlyAvg = await getSQL(
-      `SELECT AVG(service_duration) as hourly_avg 
-       FROM historical_data 
+      `SELECT AVG(service_duration) as hourly_avg
+       FROM historical_data
        WHERE business_id = ? AND strftime('%H', arrival_time) = ?`,
-      [business_id, String(arrival_hour)]
+      [business_id, String(arrival_hour).padStart(2, "0")] // self-note: sqlite %H expects 00-23
     );
-    const hourly_avg_service_time = hourlyAvg?.hourly_avg || 30;
-    
-    // 4. Call FastAPI with all 7 parameters
+    const hourly_avg_service_time = Number(hourlyAvg?.hourly_avg) || 30;
+
+    // self-note: FastAPI schema expects business_id as string; keep all numeric features numbers
+    const payload = {
+      business_id: String(business_id),
+      arrival_hour: Number(arrival_hour),
+      queue_length: Number(queue_length),
+      service_type: st,
+      service_details: sd,
+      avg_service_time: Number(avg_service_time),
+      hourly_avg_service_time: Number(hourly_avg_service_time)
+    };
+
+    // self-note: call ML service (Node acts as feature-builder + validator)
     const response = await fetch(`${ML_URL}/predict`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        business_id,
-        arrival_hour,
-        queue_length,
-        service_type,
-        service_details,
-        avg_service_time,
-        hourly_avg_service_time
-      })
+      body: JSON.stringify(payload)
     });
 
-    const result = await response.json();
-    if (result.error) throw new Error(result.error);
+    // self-note: handle non-200 responses from ML (422/500/etc)
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      throw new Error(`ML error ${response.status}: ${text || "unknown"}`);
+    }
 
-    // 5. Store in appointments table
+    const result = await response.json().catch(() => ({}));
+
+    // self-note: support both possible ML response keys (depending on your FastAPI output)
+    const predicted =
+      Number(result.predicted_wait_minutes ?? result.predicted_wait ?? result.minutes);
+
+    if (!Number.isFinite(predicted)) {
+      throw new Error("ML response missing predicted_wait_minutes");
+    }
+
+    // self-note: store prediction request + output for later training/audit
     const insertResult = await runSQL(
-      `INSERT INTO appointments 
-      (business_id, arrival_time, queue_length, service_type, service_details, predicted_wait) 
-      VALUES (?, ?, ?, ?, ?, ?)`,
-      [business_id, arrival_time, queue_length, service_type, service_details, result.predicted_wait_minutes]
+      `INSERT INTO appointments
+       (business_id, arrival_time, queue_length, service_type, service_details, predicted_wait)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [business_id, arrival_time, queue_length, st, sd, predicted]
     );
 
-    // 6. Return to frontend
-    res.json({
-      predicted_wait_minutes: result.predicted_wait_minutes,
+    // self-note: return prediction to frontend so UI can show it immediately
+    return res.json({
+      predicted_wait_minutes: predicted,
       appointment_id: insertResult.lastID
     });
 
   } catch (error) {
     console.error('Prediction error:', error);
-    res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: error.message });
   }
 });
+
 
 // STEP DATABASE
 // ---------- Queue Members ----------
@@ -1319,6 +1535,71 @@ app.post("/eta", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "ETA server error" });
+  }
+});
+// ===============================
+// Verify email endpoints
+// ===============================
+
+app.get("/verify/user", async (req, res) => {
+  const token = String(req.query.token || "").trim();
+  if (!token) return res.status(400).send("Missing token");
+
+  try {
+    const user = await getSQL(
+      `SELECT id, email_verify_expires FROM users WHERE email_verify_token = ?`,
+      [token]
+    );
+    if (!user) return res.status(400).send("Invalid token");
+
+    if (!user.email_verify_expires || Date.now() > Number(user.email_verify_expires)) {
+      return res.status(400).send("Token expired");
+    }
+
+    await runSQL(
+      `UPDATE users
+       SET email_verified = 1,
+           email_verify_token = NULL,
+           email_verify_expires = NULL
+       WHERE id = ?`,
+      [user.id]
+    );
+
+    return res.send("Email verified successfully. You can login now.");
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Server error");
+  }
+});
+
+app.get("/verify/business", async (req, res) => {
+  const token = String(req.query.token || "").trim();
+  if (!token) return res.status(400).send("Missing token");
+
+  try {
+    const biz = await getSQL(
+      `SELECT id, email_verify_expires FROM businesses WHERE email_verify_token = ?`,
+      [token]
+    );
+    if (!biz) return res.status(400).send("Invalid token");
+
+    if (!biz.email_verify_expires || Date.now() > Number(biz.email_verify_expires)) {
+      return res.status(400).send("Token expired");
+    }
+
+    await runSQL(
+      `UPDATE businesses
+       SET email_verified = 1,
+           email_verify_token = NULL,
+           email_verify_expires = NULL
+       WHERE id = ?`,
+      [biz.id]
+    );
+
+    return res.send("Business email verified successfully. If pending, wait for admin approval.");
+  } catch (e) {
+    console.error(e);
+    return res.status(500).send("Server error");
   }
 });
 
