@@ -92,7 +92,8 @@ document.addEventListener('DOMContentLoaded', function () {
         }
       } catch (error) {
         console.error('Error:', error);
-        alert("تعذر الاتصال بالخادم. تأكد أن السيرفر يعمل على المنفذ 3000.");
+        alert("تعذر الاتصال بالخادم. حاول مرة أخرى لاحقًا.");
+
       }
     });
   }

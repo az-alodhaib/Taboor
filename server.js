@@ -304,6 +304,24 @@ function allSQL(sql, params = []) {
     db.all(sql, params, (err, rows) => err ? reject(err) : resolve(rows));
   });
 }
+
+function safeAddColumn(table, colDef) {
+  return new Promise((resolve) => {
+    db.run(`ALTER TABLE ${table} ADD COLUMN ${colDef}`, [], () => resolve());
+  });
+}
+
+// self-note: SQLite doesn't support IF NOT EXISTS for ADD COLUMN, so ignore errors
+  (async () => {
+      await safeAddColumn("users", "email_verified INTEGER DEFAULT 0");
+      await safeAddColumn("users", "email_verify_token TEXT");
+      await safeAddColumn("users", "email_verify_expires INTEGER");
+
+    await safeAddColumn("businesses", "email_verified INTEGER DEFAULT 0");
+    await safeAddColumn("businesses", "email_verify_token TEXT");
+    await safeAddColumn("businesses", "email_verify_expires INTEGER");
+  })();
+
 // =============================================
 // GLOBAL UNIQUENESS HELPERS (users + businesses)
 // =============================================
@@ -965,7 +983,10 @@ app.post('/predict-wait', async (req, res) => {
       throw new Error(`ML error ${response.status}: ${text || "unknown"}`);
     }
 
-    const result = await response.json().catch(() => ({}));
+    let result = {};
+    const text = await response.text();
+    try { result = JSON.parse(text); } catch { result = { error: text }; }
+
 
     // self-note: support both possible ML response keys (depending on your FastAPI output)
     const predicted =
