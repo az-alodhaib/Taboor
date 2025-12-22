@@ -88,6 +88,35 @@
   font-size: 0.85rem;
   color: #6b7280;
 }
+/* self-note: service approval status badge */
+.service-status-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  font-size: 0.75rem;
+  margin-inline-start: 8px;
+  border: 1px solid transparent;
+}
+
+.service-status-pending {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.service-status-approved {
+  background: #ecfdf5;
+  border-color: #6ee7b7;
+  color: #065f46;
+}
+
+.service-status-rejected {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
 
 /* Mobile tweaks */
 @media (max-width: 768px) {

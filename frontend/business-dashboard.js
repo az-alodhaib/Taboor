@@ -389,7 +389,23 @@ async function loadServicesForBusiness(businessId) {
       const title = document.createElement("div");
       title.className = "services-list-item-title";
       title.textContent = s.name || "خدمة";
+      // self-note: show service approval status (pending / approved / rejected)
+      const badge = document.createElement("span");
+      badge.className = "service-status-badge";
 
+      if (Number(s.is_active) === 1) {
+          badge.classList.add("service-status-approved");
+          badge.textContent = "مقبولة";
+      } else if (Number(s.is_active) === -1) {
+          badge.classList.add("service-status-rejected");
+          badge.textContent = "مرفوضة";
+      } else {
+          badge.classList.add("service-status-pending");
+          badge.textContent = "قيد المراجعة";
+      }
+
+      title.appendChild(document.createTextNode(" "));
+      title.appendChild(badge);
       left.appendChild(title);
 
       if (s.description) {
