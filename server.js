@@ -16,10 +16,11 @@ const { Resend } = require("resend");
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 
+// self-note: send email via Resend (must fail if Resend returns error)
 async function sendVerifyEmail(to, verifyUrl, type = "business") {
-  const from = process.env.RESEND_FROM || "onboarding@resend.dev";
+  const from = process.env.RESEND_FROM || "Taboor <onboarding@resend.dev>";
 
-  await resend.emails.send({
+  const { data, error } = await resend.emails.send({
     from,
     to: [to],
     subject: "Taboor - Verify your email",
@@ -33,7 +34,20 @@ async function sendVerifyEmail(to, verifyUrl, type = "business") {
       </div>
     `
   });
+
+  // self-note: Resend SDK returns {data,error}, not throw
+  if (error) {
+    throw new Error(
+      typeof error === "string"
+        ? error
+        : (error.message || JSON.stringify(error))
+    );
+  }
+
+  // self-note: keep id for debugging
+  return data; // usually { id: "..." }
 }
+
 
 // ML service base URL (single source of truth)
 const ML_URL = process.env.ML_URL || "https://taboor-ml.onrender.com";
@@ -471,13 +485,17 @@ app.post('/register', async (req, res) => {
       [name, email, phone || null, hashedPassword, verifyToken, verifyExpires]
     );
 
-    // self-note: send verification email (account can exist even if email fails)
-    try {
-      const verifyUrl = `${BASE_URL}/verify/user?token=${verifyToken}`;
-      await sendVerifyEmail(email, verifyUrl, "user");
-    } catch (mailErr) {
-      console.error("Email send failed:", mailErr);
-    }
+    // self-note: send verification email (fire-and-forget, never block register)
+    const verifyUrl = `${BASE_URL}/verify/user?token=${verifyToken}`;
+
+    sendVerifyEmail(email, verifyUrl, "user")
+      .then((data) => {
+        console.log("User verify email queued:", email, data?.id);
+      })
+      .catch((err) => {
+       console.error("User verify email failed:", err);
+     });
+
 
     return res.status(201).json({
       message: 'تم إنشاء الحساب بنجاح. تم إرسال رابط التحقق إلى بريدك الإلكتروني.',
@@ -783,13 +801,14 @@ app.get("/test-email", async (req, res) => {
     const to = String(req.query.to || "");
     if (!to) return res.status(400).send("Missing ?to=email");
 
-    await sendVerifyEmail(to, "https://example.com", "test");
-    res.send("sent");
+    const data = await sendVerifyEmail(to, "https://example.com", "test");
+    return res.json({ ok: true, data }); // includes id
   } catch (e) {
     console.error(e);
-    res.status(500).send(String(e.message || e));
+    return res.status(500).json({ ok: false, error: String(e.message || e) });
   }
 });
+
 
 
 // STEP DATABASE
