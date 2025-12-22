@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', function () {
   if (registerForm) {
     registerForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      console.log("[REGISTER] submit clicked");
 
       // self-note: prevent double submit
       if (registerBtn) {
@@ -80,6 +81,7 @@ document.addEventListener('DOMContentLoaded', function () {
       };
 
       try {
+        console.log("[REGISTER] sending request:", `${API_BASE}/business/register`, businessData);
         const response = await fetch(`${API_BASE}/business/register`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
