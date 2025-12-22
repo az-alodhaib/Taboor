@@ -778,6 +778,18 @@ app.post('/business/login', async (req, res) => {
 });
 
 
+app.get("/test-email", async (req, res) => {
+  try {
+    const to = String(req.query.to || "");
+    if (!to) return res.status(400).send("Missing ?to=email");
+
+    await sendVerifyEmail(to, "https://example.com", "test");
+    res.send("sent");
+  } catch (e) {
+    console.error(e);
+    res.status(500).send(String(e.message || e));
+  }
+});
 
 
 // STEP DATABASE
