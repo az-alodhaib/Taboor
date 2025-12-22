@@ -356,14 +356,14 @@ async function isPhoneTaken(phone) {
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 
-const mailTransporter = nodemailer.createTransport({
+const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
   port: Number(process.env.SMTP_PORT || 465),
   secure: String(process.env.SMTP_SECURE || "true") === "true",
-  auth: {
-    user: process.env.SMTP_USER,
-    pass: process.env.SMTP_PASS
-  }
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  connectionTimeout: 10_000,
+  greetingTimeout: 10_000,
+  socketTimeout: 10_000
 });
 
 const MAIL_FROM = process.env.MAIL_FROM || process.env.SMTP_USER;
@@ -387,7 +387,7 @@ async function sendVerifyEmail(to, verifyUrl, kind) {
     </div>
   `;
 
-  await mailTransporter.sendMail({
+  await transporter.sendMail({
     from: MAIL_FROM,
     to,
     subject,
@@ -669,12 +669,13 @@ app.post('/business/register', async (req, res) => {
     );
 
     // self-note: send verification email
-    try {
+    // self-note: fire-and-forget email so registration never hangs
       const verifyUrl = `${BASE_URL}/verify/business?token=${verifyToken}`;
-      await sendVerifyEmail(email, verifyUrl, "business");
-    } catch (mailErr) {
-      console.error("Email send failed:", mailErr);
-    }
+
+      sendVerifyEmail(email, verifyUrl, "business")
+      .then(() => console.log("Verify email sent to:", email))
+      .catch((e) => console.error("Email send failed:", e));
+
 
     return res.status(201).json({
       message: 'Business created (pending). Verification email sent.',
