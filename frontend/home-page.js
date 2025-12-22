@@ -516,11 +516,10 @@ function HomePage() {
         // self-note: travelMinutes = ETA from my current location -> business (approx for now)
         travelMinutes: Number(b.travelMinutes || 0),
 
-        // self-note: estimationMinutes = waitMinutes + travelMinutes (new feature; will improve later with real traffic API)
-        estimationMinutes: Number(b.waitTimeMinutes || 0) + Number(b.travelMinutes || 0),
+        // self-note: prefer ML if available, otherwise use queue estimate
+        estimationMinutes: Number(finalWaitMinutes || 0) + Number(b.travelMinutes || 0),
+        estMinutes: Number(finalWaitMinutes || 0)
 
-        // self-note: legacy field kept so old QStatus still works
-        estMinutes: Number(b.waitTimeMinutes || 0)
     }
 
       };
@@ -535,19 +534,36 @@ function HomePage() {
        alert("الرجاء تسجيل الدخول مرة أخرى (userId مفقود).");
         return;
       }
+      
+      // self-note: if business has no queue yet, create one automatically
+      let queueId = b.queueId;
 
-      const queueId = b.queueId;
       if (!queueId) {
-       alert("لا يوجد طابور متاح لهذه المنشأة حالياً.");
-       return;
-      }
+       const createRes = await fetch(`${API_BASE}/queues`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+      business_id: b.id,
+      service_id: chosenServices[0]?.id || null
+    })
+  });
+
+  const createJson = await createRes.json().catch(() => ({}));
+  if (!createRes.ok) throw new Error(createJson.error || "Failed to create queue");
+
+  queueId = createJson.queue?.id;
+  if (!queueId) throw new Error("Queue created but id is missing");
+
+  // keep it in memory so later code uses it
+  b.queueId = queueId;
+}
 
    const joinRes = await fetch(`${API_BASE}/queues/${queueId}/join`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       user_id: userId,
-      note: chosenServices.map(s => s.name).join(", ")
+      service_id: chosenServices[0]?.id
      })
     });
 
@@ -569,6 +585,7 @@ function HomePage() {
     // Save to localStorage so the QStatus page can read it
     localStorage.setItem("queueStatus", JSON.stringify(payload));
     window.location.href = "QStatus.html";
+
 
     },
     
