@@ -58,6 +58,7 @@ async function requestLocationWithDisclosure() {
 }
 
 
+
 // self-note: Real browser geolocation prompt happens here.
 function getUserLocationOnce() {
   if (!navigator.geolocation) throw new Error("Geolocation not supported");
@@ -519,8 +520,9 @@ function HomePage() {
 
         // self-note: prefer ML if available, otherwise use queue estimate
         estimationMinutes: Number(finalWaitMinutes || 0) + Number(b.travelMinutes || 0),
-        estMinutes: Number(finalWaitMinutes || 0)
-
+        estMinutes: Number(finalWaitMinutes || 0),
+        // self-note: persist join time so QStatus progress survives refresh
+        joinedAt: Date.now()
     }
 
       };

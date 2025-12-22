@@ -80,6 +80,9 @@ function QStatusPage() {
         this.refreshEtaTravelOnly();
 
       }
+      // self-note: keep join timestamp so progress survives page refresh
+      this.data.queue.joinedAt = Number(this.data.queue.joinedAt || Date.now());
+
     }
   } catch (e) {}
 
@@ -95,13 +98,16 @@ function QStatusPage() {
     return;
   }
 
-  const est = Math.max(1, wait);
-  this._durationMs = est * 60 * 1000;
-  this._startTs = performance.now();
-  requestAnimationFrame(this._tick.bind(this));
-  this._animateDots();
+    const est = Math.max(1, wait);
+    this._durationMs = est * 60 * 1000;
+    const joinedAt = Number(this.data.queue.joinedAt || Date.now());
+    const elapsedReal = Math.max(0, Date.now() - joinedAt);
+    const elapsedCapped = Math.min(elapsedReal, this._durationMs);
+    this._startTs = performance.now() - elapsedCapped;
+    requestAnimationFrame(this._tick.bind(this));
+    this._animateDots();
   
-},
+  },
 
     _tick(ts) {
       const elapsed = ts - this._startTs;
@@ -264,9 +270,13 @@ _restartProgress() {
 
   const est = Math.max(1, wait);
   this._durationMs = est * 60 * 1000;
-  this._startTs = performance.now();
-  requestAnimationFrame(this._tick.bind(this));
-},
+  const joinedAt = Number(this.data.queue.joinedAt || Date.now());
+  const elapsedReal = Math.max(0, Date.now() - joinedAt);
+  const elapsedCapped = Math.min(elapsedReal, this._durationMs);
+  this._startTs = performance.now() - elapsedCapped;
+
+   requestAnimationFrame(this._tick.bind(this));
+  },
 
     async refreshEtaTravelOnly() {
   try {
