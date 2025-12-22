@@ -8,6 +8,18 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadBusinessTypes();
   loadPendingBusinesses();
   loadPendingServices();
+  const logoutBtn = document.getElementById("btn-admin-logout");
+if (logoutBtn) {
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      await fetch(`${API_BASE}/admin/logout`, { method: "POST" }).catch(() => {});
+    } finally {
+      localStorage.removeItem("admin");
+      window.location.href = "index.html";
+    }
+  });
+}
+
 });
 
 // Load business types (value/label) from backend

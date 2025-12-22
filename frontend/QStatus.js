@@ -169,20 +169,42 @@ async refreshQueueStatusFromServer() {
     const res = await fetch(`${API_BASE}/queues/${queueId}/user-status?user_id=${encodeURIComponent(userId)}`);
     const json = await res.json().catch(() => ({}));
 
-    // if ticket not active anymore (done/left/skipped/rejected), stop polling
-    if (!res.ok) {
-      // self-note: ticket ended or user not in queue anymore
-      this.stopAutoRefresh();
-      return;
-    }
+    // if request failed, handle carefully (don't silently kill the UI)
+  if (!res.ok) {
+  // self-note: 404 usually means no active ticket (user already left / queue reset)
+  if (res.status === 404) {
+    this.stopAutoRefresh();
+    localStorage.removeItem("queueStatus");
+    window.location.href = "home_page.html";
+    return;
+  }
+
+  // self-note: temporary/server errors should NOT stop polling
+  console.warn("refreshQueueStatusFromServer failed:", json);
+  return;
+}
+
 
     this.data.queue = this.data.queue || {};
 
     // update live values
-    this.data.queue.position = Number(json.position ?? this.data.queue.position ?? 1);
-    this.data.queue.waitMinutes = Number(json.wait_minutes ?? this.data.queue.waitMinutes ?? 0);
+    this.data.queue.status = json.status ?? this.data.queue.status ?? "waiting";
+
+      // self-note: prefer ML wait if available, fallback to linear wait
+      const mlWait = Number(json.wait_minutes_ml);
+      const linearWait = Number(json.wait_minutes);
+
+      const effectiveWait =
+       Number.isFinite(mlWait) && mlWait >= 0 ? mlWait :
+      (Number.isFinite(linearWait) && linearWait >= 0 ? linearWait : 0);
+
+    // self-note: position might be null if ticket finished
+    this.data.queue.position = json.position != null ? Number(json.position) : null;
+
+    this.data.queue.waitMinutes = effectiveWait;
     this.data.queue.estMinutes = this.data.queue.waitMinutes; // backward compatibility
     this.data.queue.totalPeople = Number(json.people_in_line ?? this.data.queue.totalPeople ?? 0);
+
 
     // keep business coords synced (ETA needs it)
     if (json.business) {
@@ -198,6 +220,25 @@ async refreshQueueStatusFromServer() {
       this._restartProgress();
     }
 
+    // self-note: if backend says ticket finished, show it clearly
+  if (json.is_finished) {
+    this.stopAutoRefresh();
+    this.progress = 100;
+
+    const st = String(json.status || "").toLowerCase();
+
+    if (st === "done") {
+      alert("✅ تم إكمال خدمتك بنجاح");
+    } else if (st === "left") {
+      alert("ℹ️ تم إنهاء تذكرتك (تم الخروج من الطابور).");
+    } else if (st === "skipped") {
+      alert("ℹ️ تم تخطي تذكرتك.");
+    }
+
+  localStorage.removeItem("queueStatus");
+  window.location.href = "home_page.html";
+  return;
+}
     
     // self-note: refresh ETA sometimes (every 3 polls)
     this._etaPollCounter = (this._etaPollCounter || 0) + 1;

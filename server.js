@@ -526,6 +526,29 @@ app.post("/admin/login", (req, res) => {
 
 app.use("/admin", requireAdmin);
 
+// ===============================
+// Logout endpoints
+// ===============================
+app.post("/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie("connect.sid");
+    res.json({ message: "Logged out" });
+  });
+});
+
+app.post("/business/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie("connect.sid");
+    res.json({ message: "Business logged out" });
+  });
+});
+
+app.post("/admin/logout", (req, res) => {
+  req.session.destroy(() => {
+    res.clearCookie("connect.sid");
+    res.json({ message: "Admin logged out" });
+  });
+});
 
 // ---------------------------------------------
 // Route 3: Login User
@@ -1159,12 +1182,14 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
   if (!user_id) return res.status(400).json({ error: 'user_id is required' });
 
   try {
-    // self-note: fetch queue + business + service duration
+    // self-note: fetch queue + business + optional service data
     const queue = await getSQL(
       `SELECT q.*,
               b.name AS business_name,
               b.latitude  AS business_latitude,
               b.longitude AS business_longitude,
+              s.id AS service_id,
+              s.name AS service_name,
               s.duration_minutes AS service_duration_minutes
        FROM queues q
        JOIN businesses b ON b.id = q.business_id
@@ -1175,43 +1200,39 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
 
     if (!queue) return res.status(404).json({ error: 'Queue not found' });
 
-    // self-note: get my latest active ticket (waiting or called)
+    // self-note: ALWAYS fetch my latest ticket, even if it is done/left/skipped
     const me = await getSQL(
       `SELECT * FROM queue_members
-       WHERE queue_id = ? AND user_id = ? AND status IN ('waiting','called')
+       WHERE queue_id = ? AND user_id = ?
        ORDER BY id DESC LIMIT 1`,
       [queueId, user_id]
-     );
+    );
 
     if (!me) {
-      return res.status(404).json({ error: 'No active ticket for this user in this queue' });
+      return res.status(404).json({ error: 'No ticket for this user in this queue' });
     }
 
-    // self-note: count people ahead of me in line (waiting + called) using ticket id ordering
-    const aheadRow = await getSQL(
-      `SELECT COUNT(*) AS ahead
-       FROM queue_members
-       WHERE queue_id = ?
-         AND status IN ('waiting','called')
-         AND id < ?`,
-      [queueId, me.id]
-    );
+    // self-note: people ahead only matters if I'm still active
+    const activeStatuses = ["waiting", "called"];
+    const isActive = activeStatuses.includes(me.status);
+
+    const aheadRow = isActive
+      ? await getSQL(
+          `SELECT COUNT(*) AS ahead
+           FROM queue_members
+           WHERE queue_id = ?
+             AND status IN ('waiting','called')
+             AND id < ?`,
+          [queueId, me.id]
+        )
+      : { ahead: 0 };
 
     const ahead = Number(aheadRow?.ahead || 0);
 
-    //  If there is no service duration, return an error
-    if (!queue.service_duration_minutes) {
-      return res.status(400).json({
-          error: 'Service duration is not defined for this queue'
-      });
-    }
+    // self-note: if no service is set on queue, fallback to 10 (so customer page never breaks)
+    const baseMinutes = Number(queue.service_duration_minutes || 10);
 
-    const baseMinutes = Number(queue.service_duration_minutes);
-
-
-    const waitMinutes = ahead * baseMinutes;
-
-    // self-note: total people currently blocking line (waiting + called)
+    // self-note: total people blocking the line (waiting + called)
     const totals = await getSQL(
       `SELECT
          SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END) AS waiting,
@@ -1221,15 +1242,82 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
       [queueId]
     );
 
-    const peopleInLine = Number(totals?.waiting || 0) + Number(totals?.called || 0);
+    const waitingCount = Number(totals?.waiting || 0);
+    const calledCount  = Number(totals?.called  || 0);
+    const peopleInLine = waitingCount + calledCount;
+
+    // ---------- ML prediction (optional) ----------
+    async function predictWaitMlMinutes() {
+      try {
+        const arrivalDate = new Date();
+        const arrival_hour = arrivalDate.getHours();
+
+        const st = String(queue.service_name || "").trim(); // service_type
+        const sd = ""; // service_details (not used yet)
+
+        const serviceAvg = await getSQL(
+          `SELECT AVG(service_duration) as avg_time
+           FROM historical_data
+           WHERE business_id = ? AND service_type = ? AND service_details = ?`,
+          [queue.business_id, st, sd]
+        );
+        const avg_service_time = Number(serviceAvg?.avg_time) || baseMinutes;
+
+        const hourlyAvg = await getSQL(
+          `SELECT AVG(service_duration) as hourly_avg
+           FROM historical_data
+           WHERE business_id = ? AND strftime('%H', arrival_time) = ?`,
+          [queue.business_id, String(arrival_hour).padStart(2, "0")]
+        );
+        const hourly_avg_service_time = Number(hourlyAvg?.hourly_avg) || baseMinutes;
+
+        const payload = {
+          business_id: String(queue.business_id),
+          arrival_hour: Number(arrival_hour),
+          queue_length: Number(peopleInLine),
+          service_type: st,
+          service_details: sd,
+          avg_service_time: Number(avg_service_time),
+          hourly_avg_service_time: Number(hourly_avg_service_time)
+        };
+
+        const r = await fetch(`${ML_URL}/predict`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        if (!r.ok) return null;
+
+        const text = await r.text().catch(() => "");
+        let result = {};
+        try { result = JSON.parse(text); } catch { return null; }
+
+        const predicted = Number(result.predicted_wait_minutes ?? result.predicted_wait ?? result.minutes);
+        if (!Number.isFinite(predicted)) return null;
+
+        return predicted;
+      } catch (e) {
+        console.error("ML predict (user-status) failed:", e);
+        return null;
+      }
+    }
+
+    // self-note: only ask ML when user is still active; otherwise it is pointless
+    const ml_wait_minutes = isActive ? await predictWaitMlMinutes() : null;
+
+    // self-note: linear wait until my turn (people ahead * baseMinutes)
+    const waitMinutesLinear = isActive ? (ahead * baseMinutes) : 0;
 
     res.json({
       ticket_number: me.ticket_number,
       status: me.status,
-      position: ahead + 1,
-      wait_minutes: waitMinutes,
+      position: isActive ? (ahead + 1) : null,
+      wait_minutes: waitMinutesLinear,
+      wait_minutes_ml: ml_wait_minutes,
       service_duration_minutes: baseMinutes,
       people_in_line: peopleInLine,
+      is_finished: !isActive,
       business: {
         id: queue.business_id,
         name: queue.business_name,
@@ -1242,6 +1330,7 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     res.status(500).json({ error: 'Failed to get user status' });
   }
 });
+
 
 
 // STEP DATABASE
@@ -1461,7 +1550,11 @@ app.patch('/admin/businesses/:id/reject', async (req, res) => {
     if (!business) return res.status(404).json({ error: 'Business not found' });
 
     // self-note: delete children first (avoid FK issues)
-    await runSQL(`DELETE FROM queue_members WHERE business_id = ?`, [id]).catch(() => {});
+    const qs = await allSQL(`SELECT id FROM queues WHERE business_id = ?`, [id]);
+    for (const q of qs) {
+      await runSQL(`DELETE FROM queue_members WHERE queue_id = ?`, [q.id]).catch(() => {});
+    }
+
     await runSQL(`DELETE FROM queues WHERE business_id = ?`, [id]).catch(() => {});
     await runSQL(`DELETE FROM services WHERE business_id = ?`, [id]).catch(() => {});
     await runSQL(`DELETE FROM appointments WHERE business_id = ?`, [id]).catch(() => {});
@@ -1476,6 +1569,7 @@ app.patch('/admin/businesses/:id/reject', async (req, res) => {
     return res.status(500).json({ error: 'Failed to reject/delete business' });
   }
 });
+
 
 
 

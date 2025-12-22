@@ -13,6 +13,27 @@ let gUserInfoWindow = null;
 // ==========================
 const API_BASE = window.location.origin;
 
+// self-note: logout button (customer)
+// self-note: logout button (customer) - same pattern as business dashboard
+document.addEventListener("DOMContentLoaded", () => {
+  const logoutBtn = document.getElementById("logout-btn");
+  if (!logoutBtn) return;
+
+  logoutBtn.addEventListener("click", async () => {
+    try {
+      // self-note: clear server session too (best effort)
+      await fetch(`${API_BASE}/logout`, { method: "POST", credentials: "include" }).catch(() => {});
+    } finally {
+      localStorage.removeItem("user");
+      localStorage.removeItem("userId");
+      localStorage.removeItem("user_id");
+      localStorage.removeItem("queueStatus");
+      window.location.href = "index.html";
+    }
+  });
+});
+
+
 
 // Set tax rate here once; currently 15%
 // canceled const TAX_RATE = 0.15;
@@ -23,10 +44,19 @@ const API_BASE = window.location.origin;
 
 // self-note: Show disclosure BEFORE triggering browser permission prompt.
 async function requestLocationWithDisclosure() {
+  // self-note: show disclosure only once, then remember consent
+  const KEY = "taboor_location_consent_v1";
+  if (localStorage.getItem(KEY) === "1") {
+    return await getUserLocationOnce();
+  }
+
   const ok = confirm("📍 سنستخدم موقعك فقط لحساب وقت الوصول (ETA) للمزود. هل توافق؟");
   if (!ok) return null;
+
+  localStorage.setItem(KEY, "1");
   return await getUserLocationOnce();
 }
+
 
 // self-note: Real browser geolocation prompt happens here.
 function getUserLocationOnce() {
@@ -138,7 +168,7 @@ function HomePage() {
 
     // self-note: request permission only when user clicks the button
     if (!this.userLocation) {
-      const loc = await requestLocationWithDisclosure();
+      const loc = await getUserLocationOnce().catch(() => null);
       if (!loc) return;
       this.userLocation = loc;
       this.locationEnabled = true;
@@ -254,35 +284,6 @@ function HomePage() {
         this.loading = false;
       }
     },
-
-    async centerToMyLocation() {
-      try {
-      if (!gHomeMapInitialized || !gHomeMap) return;
-
-     // self-note: if location already exists, just center
-     if (this.userLocation && !Number.isNaN(Number(this.userLocation.lat)) && !Number.isNaN(Number(this.userLocation.lng))) {
-        const pos = { lat: Number(this.userLocation.lat), lng: Number(this.userLocation.lng) };
-       gHomeMap.setZoom(15);
-        gHomeMap.panTo(pos);
-        return;
-      }
-
-      // self-note: fallback if user denied earlier or location not ready
-      const loc = await requestLocationWithDisclosure();
-      if (!loc) return;
-
-      this.userLocation = loc;
-      this.locationEnabled = true;
-
-      const pos = { lat: Number(loc.lat), lng: Number(loc.lng) };
-      if (Number.isNaN(pos.lat) || Number.isNaN(pos.lng)) return;
-
-     gHomeMap.setZoom(15);
-      gHomeMap.panTo(pos);
-    } catch (e) {
-     console.error(e);
-    }
-  },
 
     // Filtered list of businesses based on category and search query
     get filteredBusinesses() {
