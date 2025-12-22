@@ -11,8 +11,29 @@ const bodyParser = require('body-parser');     // Tool to read data from forms
 const path = require("path"); // self-note: path helper for HTML serving
 const session = require("express-session"); // self-note: server-side login memory
 const crypto = require("crypto");
-const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+
+async function sendVerifyEmail(to, verifyUrl, type = "business") {
+  const from = process.env.RESEND_FROM || "onboarding@resend.dev";
+
+  await resend.emails.send({
+    from,
+    to: [to],
+    subject: "Taboor - Verify your email",
+    html: `
+      <div style="font-family:Arial;line-height:1.6">
+        <h2>Email Verification</h2>
+        <p>You created a ${type} account in Taboor.</p>
+        <p>Click the link below to verify your email:</p>
+        <p><a href="${verifyUrl}">${verifyUrl}</a></p>
+        <p>This link expires in 24 hours.</p>
+      </div>
+    `
+  });
+}
 
 // ML service base URL (single source of truth)
 const ML_URL = process.env.ML_URL || "https://taboor-ml.onrender.com";
@@ -356,18 +377,7 @@ async function isPhoneTaken(phone) {
 
 const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 
-const transporter = nodemailer.createTransport({
-  host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 587),
-  secure: String(process.env.SMTP_SECURE || "false") === "true", // false for 587
-  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 10000,
-  requireTLS: true
-});
 
-const MAIL_FROM = process.env.MAIL_FROM || process.env.SMTP_USER;
 
 // self-note: 24h token
 function makeVerifyToken() {
@@ -375,25 +385,6 @@ function makeVerifyToken() {
 }
 function makeVerifyExpiresMs(hours = 24) {
   return Date.now() + hours * 60 * 60 * 1000;
-}
-
-async function sendVerifyEmail(to, verifyUrl, kind) {
-  const subject = "Taboor - Verify your email";
-  const html = `
-    <div style="font-family:Arial,sans-serif;line-height:1.6">
-      <h2>Email Verification</h2>
-      <p>You created a ${kind} account in Taboor.</p>
-      <p>Click this link to verify your email (expires in 24 hours):</p>
-      <p><a href="${verifyUrl}">${verifyUrl}</a></p>
-    </div>
-  `;
-
-  await transporter.sendMail({
-    from: MAIL_FROM,
-    to,
-    subject,
-    html
-  });
 }
 
 //--------------------------------------
@@ -672,6 +663,10 @@ app.post('/business/register', async (req, res) => {
     // self-note: send verification email
     // self-note: fire-and-forget email so registration never hangs
       const verifyUrl = `${BASE_URL}/verify/business?token=${verifyToken}`;
+      
+      console.log("Verify email ->", email);
+      console.log("Verify URL ->", verifyUrl);
+      console.log("BASE_URL ->", BASE_URL);
 
       sendVerifyEmail(email, verifyUrl, "business")
       .then(() => console.log("Verify email sent to:", email))
@@ -679,9 +674,11 @@ app.post('/business/register', async (req, res) => {
 
 
     return res.status(201).json({
-      message: 'Business created (pending). Verification email sent.',
-      business_id: result.lastID
+    message: 'Business created (pending). Please check your email to verify.',
+    business_id: result.lastID,
+    email_status: "queued"
     });
+
   } catch (err) {
     console.error(err);
 
