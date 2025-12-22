@@ -27,17 +27,18 @@ function getBrowserLocation() {
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
       (err) => {
-        // self-note: show why Safari refused / failed
+        // self-note: show why location failed (permission/timeout/etc)
         console.log("ETA debug: geolocation error", {
           code: err?.code,
           message: err?.message
         });
         resolve(null);
       },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
+      { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
     );
   });
 }
+
 
 
 function QStatusPage() {
@@ -280,9 +281,18 @@ _restartProgress() {
         });
 
         if (!res.ok) {
-          const err = await res.json().catch(() => ({}));
-          throw new Error(err?.error || "Failed to leave queue");
-        }
+        const err = await res.json().catch(() => ({}));
+
+      // self-note: if backend says I'm not in queue anymore, just treat as success
+      if (res.status === 404 && String(err?.error || "").includes("No active ticket")) {
+       localStorage.removeItem("queueStatus");
+       window.location.href = "home_page.html";
+       return;
+      }
+
+  throw new Error(err?.error || "Failed to leave queue");
+}
+
       } catch (e) {
         console.error(e);
         alert("تعذر مغادرة الطابور. حاول مرة أخرى.");

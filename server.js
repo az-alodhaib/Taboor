@@ -1104,6 +1104,7 @@ app.post('/queues/:queueId/join', async (req, res) => {
 
     res.status(201).json({
       message: 'Joined queue successfully',
+      member_id: me.id, 
       ticket_number: ticket,
       position: (ahead ? ahead.ahead : 0) + 1
     });
@@ -1124,7 +1125,7 @@ app.get('/queues/:queueId/position', async (req, res) => {
     const me = await getSQL(
       `SELECT * FROM queue_members
        WHERE queue_id = ? AND user_id = ? AND status IN ('waiting','called')
-       ORDER BY id DESC LIMIT 1`,
+       ORDER BY id DESC LIMIT 1`
       [queueId, user_id]
     );
     if (!me) return res.status(404).json({ error: 'No active ticket for this user in this queue' });
@@ -1132,7 +1133,7 @@ app.get('/queues/:queueId/position', async (req, res) => {
     const ahead = await getSQL(
       `SELECT COUNT(*) AS ahead
        FROM queue_members
-      WHERE queue_id = ? AND status IN ('waiting','called') AND id < ?`,
+       WHERE queue_id = ? AND status IN ('waiting','called') AND id < ?`,
       [queueId, me.id]
     );
 
