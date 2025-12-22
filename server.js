@@ -17,7 +17,7 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 
 
-// self-note: send email via Resend (must fail if Resend returns error)
+// self-note: send email via SendGrid (must fail if SendGrid returns error)
 async function sendVerifyEmail(to, verifyUrl, type = "business") {
   const msg = {
     to,
