@@ -12,9 +12,17 @@ const path = require("path"); // self-note: path helper for HTML serving
 const session = require("express-session"); // self-note: server-side login memory
 const crypto = require("crypto");
 const sgMail = require("@sendgrid/mail");
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
+// self-note: always sanitize env vars (Render may include newlines)
+const SENDGRID_KEY = String(process.env.SENDGRID_API_KEY || "")
+  .replace(/[\r\n]+/g, "")
+  .trim();
 
+if (!SENDGRID_KEY) {
+  console.error("SENDGRID_API_KEY is missing or empty");
+}
+
+sgMail.setApiKey(SENDGRID_KEY);
 
 
 // self-note: send email via SendGrid (must fail if SendGrid returns error)
