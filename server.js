@@ -128,18 +128,6 @@ const db = new sqlite3.Database('./taboor.db', (err) => {
   }
 });
 
-// =============================================
-// DB MIGRATION: Email verification columns
-// =============================================
-
-db.run(`ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0`, () => {});
-db.run(`ALTER TABLE users ADD COLUMN email_verify_token TEXT`, () => {});
-db.run(`ALTER TABLE users ADD COLUMN email_verify_expires INTEGER`, () => {});
-
-db.run(`ALTER TABLE businesses ADD COLUMN email_verified INTEGER DEFAULT 0`, () => {});
-db.run(`ALTER TABLE businesses ADD COLUMN email_verify_token TEXT`, () => {});
-db.run(`ALTER TABLE businesses ADD COLUMN email_verify_expires INTEGER`, () => {});
-
 // Create users table if it doesn't exist
 // This table will store: id, name, email, phone, password
 db.run(`
@@ -177,6 +165,9 @@ db.run(`
     latitude REAL,
     longitude REAL,
     phone TEXT,
+    email_verified INTEGER DEFAULT 0,
+    email_verify_token TEXT,
+    email_verify_expires INTEGER,
     is_active INTEGER NOT NULL DEFAULT 0
         CHECK (is_active IN (-1,0,1)), -- 0=pending,1=approved,-1=rejected
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
