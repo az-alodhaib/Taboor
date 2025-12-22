@@ -55,6 +55,8 @@ if (loginForm) {
     const result = await response.json().catch(() => ({}));
 
     if (response.ok) {
+      // self-note: store customer id for QStatus polling
+      localStorage.setItem("userId", String(result.user?.id ?? result.id));
       alert(result.message);
       window.location.href = "/home";
     } else {

@@ -525,24 +525,66 @@ function HomePage() {
 
       };
       
-      // Save to localStorage so the QStatus page can read it
-      localStorage.setItem("queueStatus", JSON.stringify(payload));
-      window.location.href = "QStatus.html";
+     // ==========================
+    // JOIN QUEUE (REQUIRED)
+    // ==========================
+    // self-note: MUST join queue on backend so QStatus can see me
+    try {
+     const userId = Number(localStorage.getItem("userId"));
+      if (!userId) {
+       alert("الرجاء تسجيل الدخول مرة أخرى (userId مفقود).");
+        return;
+      }
+
+      const queueId = b.queueId;
+      if (!queueId) {
+       alert("لا يوجد طابور متاح لهذه المنشأة حالياً.");
+       return;
+      }
+
+   const joinRes = await fetch(`${API_BASE}/queues/${queueId}/join`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      user_id: userId,
+      note: chosenServices.map(s => s.name).join(", ")
+     })
+    });
+
+    const joinJson = await joinRes.json().catch(() => ({}));
+    if (!joinRes.ok) throw new Error(joinJson.error || "Failed to join queue");
+
+  // self-note: store queueId in payload for QStatus polling
+  payload.queue.queueId = queueId;
+
+  // optional: store position returned by backend
+  payload.queue.position = Number(joinJson.position ?? payload.queue.position ?? 1);
+
+    } catch (e) {
+     console.error(e);
+     alert("فشل الانضمام للطابور. حاول مرة أخرى.");
+     return;
+    }
+
+    // Save to localStorage so the QStatus page can read it
+    localStorage.setItem("queueStatus", JSON.stringify(payload));
+    window.location.href = "QStatus.html";
+
     },
     
     
     // ==========================
-// MAP: Initialize Google Map
-// ==========================
-initMap() {
-  const mapElement = document.getElementById("home-map");
-  if (!mapElement) return;
+    // MAP: Initialize Google Map
+    // ==========================
+      initMap() {
+        const mapElement = document.getElementById("home-map");
+        if (!mapElement) return;
 
-  // self-note: map script might still be loading
-  if (!window.google || !google.maps) {
-    setTimeout(() => this.initMap(), 200);
-    return;
-  }
+        // self-note: map script might still be loading
+        if (!window.google || !google.maps) {
+         setTimeout(() => this.initMap(), 200);
+         return;
+        }
 
   // Riyadh center
   const defaultCenter = { lat: 24.7136, lng: 46.6753 };
