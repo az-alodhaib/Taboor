@@ -1123,7 +1123,7 @@ app.get('/queues/:queueId/position', async (req, res) => {
   try {
     const me = await getSQL(
       `SELECT * FROM queue_members
-       WHERE queue_id = ? AND user_id = ? AND status = 'waiting'
+       WHERE queue_id = ? AND user_id = ? AND status IN ('waiting','called')
        ORDER BY id DESC LIMIT 1`,
       [queueId, user_id]
     );
@@ -1132,7 +1132,7 @@ app.get('/queues/:queueId/position', async (req, res) => {
     const ahead = await getSQL(
       `SELECT COUNT(*) AS ahead
        FROM queue_members
-       WHERE queue_id = ? AND status = 'waiting' AND id < ?`,
+      WHERE queue_id = ? AND status IN ('waiting','called') AND id < ?`,
       [queueId, me.id]
     );
 

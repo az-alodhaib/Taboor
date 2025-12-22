@@ -19,14 +19,26 @@ async function getTrafficEtaMinutes(origin, destination) {
 
 function getBrowserLocation() {
   return new Promise((resolve) => {
-    if (!navigator.geolocation) return resolve(null);
+    if (!navigator.geolocation) {
+      console.log("ETA debug: geolocation not supported");
+      return resolve(null);
+    }
+
     navigator.geolocation.getCurrentPosition(
       (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => resolve(null),
-      { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      (err) => {
+        // self-note: show why Safari refused / failed
+        console.log("ETA debug: geolocation error", {
+          code: err?.code,
+          message: err?.message
+        });
+        resolve(null);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 30000 }
     );
   });
 }
+
 
 function QStatusPage() {
   return {
@@ -228,10 +240,14 @@ _restartProgress() {
 
     const origin = await getBrowserLocation();
     if (!origin) {
-      console.log("ETA debug: missing user location");
-      this.data.queue.etaMinutes = null;
-      return;
-    }
+  console.log("ETA debug: missing user location");
+
+  // self-note: fallback to saved travelMinutes (approx) if available
+  const fallback = Number(this.data?.queue?.travelMinutes ?? 0);
+  this.data.queue.etaMinutes = fallback > 0 ? fallback : null;
+
+  return;
+}
 
     const destination = { lat: destLat, lng: destLng };
 
@@ -291,17 +307,26 @@ _restartProgress() {
 
       try {
         // self-note: ask backend for my active member_id, then mark it done
-        const posRes = await fetch(`${API_BASE}/queues/${queueId}/position?user_id=${encodeURIComponent(userId)}`);
-        if (!posRes.ok) throw new Error("Failed to get my position");
+        const memberId = this.data?.queue?.memberId;
 
-        const posData = await posRes.json();
-        if (!posData?.member_id) throw new Error("No active ticket found");
+        let idToPatch = memberId;
 
-        const patchRes = await fetch(`${API_BASE}/queue_members/${posData.member_id}/status`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ status: "done" })
-        });
+      if (!idToPatch) {
+      const posRes = await fetch(`${API_BASE}/queues/${queueId}/position?user_id=${encodeURIComponent(userId)}`);
+      if (!posRes.ok) throw new Error("Failed to get my position");
+
+      const posData = await posRes.json();
+      if (!posData?.member_id) throw new Error("No active ticket found");
+
+     idToPatch = posData.member_id;
+      }
+
+      const patchRes = await fetch(`${API_BASE}/queue_members/${idToPatch}/status`, {
+       method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "done" })
+      });
+
 
         if (!patchRes.ok) {
           const err = await patchRes.json().catch(() => ({}));

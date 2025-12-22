@@ -225,9 +225,16 @@ async function loadQueueMembers(queueId) {
   name.textContent = m.user_name || "عميل";
   status.textContent = statusMap[m.status] || (m.status || "-");
 
-  joinedAt.textContent = m.joined_at
-    ? new Date(m.joined_at).toLocaleTimeString("ar-SA", { hour: "2-digit", minute: "2-digit" })
-    : "-";
+  // self-note: SQLite CURRENT_TIMESTAMP is UTC; convert safely for browser
+  const iso = String(m.joined_at).replace(" ", "T") + "Z";
+  const d = new Date(iso);
+
+  joinedAt.textContent = d.toLocaleTimeString("ar-SA", {
+  hour: "2-digit",
+  minute: "2-digit",
+  timeZone: "Asia/Riyadh"
+  });
+
 
   servedAt.textContent = "-";
 

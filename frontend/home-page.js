@@ -569,6 +569,8 @@ function HomePage() {
 
     const joinJson = await joinRes.json().catch(() => ({}));
     if (!joinRes.ok) throw new Error(joinJson.error || "Failed to join queue");
+    payload.queue.memberId = joinJson.member_id ?? null;
+
 
   // self-note: store queueId in payload for QStatus polling
   payload.queue.queueId = queueId;
