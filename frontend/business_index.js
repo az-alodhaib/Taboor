@@ -9,6 +9,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
   const loginForm = document.getElementById('business-login-form');
   const registerForm = document.getElementById('businesses-register-form');
+  const registerBtn = registerForm?.querySelector('button[type="submit"]');
+
 
   const showLoginLink = document.getElementById('show-login');
   const showRegisterLink = document.getElementById('show-register');
@@ -41,6 +43,13 @@ document.addEventListener('DOMContentLoaded', function () {
   if (registerForm) {
     registerForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+
+      // self-note: prevent double submit
+      if (registerBtn) {
+          registerBtn.disabled = true;
+          registerBtn.textContent = "جاري إنشاء الحساب...";
+      }
+
 
       // note: read register form fields
       const BusinessName = document.getElementById('business-name').value.trim();
@@ -93,11 +102,17 @@ document.addEventListener('DOMContentLoaded', function () {
         } else {
           alert("حدث خطأ أثناء إنشاء الحساب: " + (result.error || 'يرجى المحاولة لاحقًا.'));
         }
-      } catch (error) {
+        } catch (error) {
         console.error('Error:', error);
         alert("تعذر الاتصال بالخادم. حاول مرة أخرى لاحقًا.");
-
+        } finally {
+        // self-note: always re-enable button
+        if (registerBtn) {
+          registerBtn.disabled = false;
+          registerBtn.textContent = "إنشاء حساب";
+        }
       }
+
     });
   }
 

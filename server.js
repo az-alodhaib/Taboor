@@ -690,7 +690,28 @@ app.post('/business/register', async (req, res) => {
     return res.status(500).json({ error: 'Failed to create business' });
   }
 });
+  
+//verify route
+  app.get("/verify/business", async (req, res) => {
+  const token = String(req.query?.token || "");
+  if (!token) return res.status(400).send("Missing token");
 
+  const b = await getSQL(
+    `SELECT id FROM businesses WHERE email_verify_token = ? AND email_verify_expires > ?`,
+    [token, Date.now()]
+  );
+
+  if (!b) return res.status(400).send("Invalid/expired token");
+
+  await runSQL(
+    `UPDATE businesses
+     SET email_verified = 1, email_verify_token = NULL, email_verify_expires = NULL
+     WHERE id = ?`,
+    [b.id]
+  );
+
+  return res.send("تم توثيق حسابك, يمكنك تسجيل الدخول الان");
+  });
 
 
 // BUSINESS LOGIN – checks email + password from businesses table
@@ -1405,31 +1426,31 @@ app.get('/admin/businesses', async (req, res) => {
   });
 
 // PATCH /admin/businesses/:id/reject
-// Mark business as rejected (is_active = -1).
+// self-note: rejection = delete business + all dependent rows so they can reapply
 app.patch('/admin/businesses/:id/reject', async (req, res) => {
-  const id = req.params.id;
+  const id = Number(req.params.id);
 
   try {
-    await runSQL(
-      `UPDATE businesses SET is_active = -1 WHERE id = ?`,
-      [id]
-    );
+    const business = await getSQL(`SELECT * FROM businesses WHERE id = ?`, [id]);
+    if (!business) return res.status(404).json({ error: 'Business not found' });
 
-    const business = await getSQL(
-      `SELECT * FROM businesses WHERE id = ?`,
-      [id]
-    );
+    // self-note: delete children first (avoid FK issues)
+    await runSQL(`DELETE FROM queue_members WHERE business_id = ?`, [id]).catch(() => {});
+    await runSQL(`DELETE FROM queues WHERE business_id = ?`, [id]).catch(() => {});
+    await runSQL(`DELETE FROM services WHERE business_id = ?`, [id]).catch(() => {});
+    await runSQL(`DELETE FROM appointments WHERE business_id = ?`, [id]).catch(() => {});
+    await runSQL(`DELETE FROM historical_data WHERE business_id = ?`, [id]).catch(() => {});
 
-    if (!business) {
-      return res.status(404).json({ error: 'Business not found' });
-    }
+    // self-note: delete the business row (email becomes free again)
+    await runSQL(`DELETE FROM businesses WHERE id = ?`, [id]);
 
-    res.json({ message: 'Business rejected', business });
+    return res.json({ message: 'Business rejected and deleted', deleted_business: business });
   } catch (error) {
     console.error(error);
-    res.status(500).json({ error: 'Failed to reject business' });
+    return res.status(500).json({ error: 'Failed to reject/delete business' });
   }
 });
+
 
 
 // Admin: list services by status (pending / approved)
