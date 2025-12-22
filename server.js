@@ -11,41 +11,28 @@ const bodyParser = require('body-parser');     // Tool to read data from forms
 const path = require("path"); // self-note: path helper for HTML serving
 const session = require("express-session"); // self-note: server-side login memory
 const crypto = require("crypto");
-const { Resend } = require("resend");
+const sgMail = require("@sendgrid/mail");
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+
 
 
 // self-note: send email via Resend (must fail if Resend returns error)
 async function sendVerifyEmail(to, verifyUrl, type = "business") {
-  const from = process.env.RESEND_FROM || "Taboor <onboarding@resend.dev>";
-
-  const { data, error } = await resend.emails.send({
-    from,
-    to: [to],
+  const msg = {
+    to,
+    from: process.env.SENDGRID_SENDER,
     subject: "Taboor - Verify your email",
     html: `
       <div style="font-family:Arial;line-height:1.6">
         <h2>Email Verification</h2>
-        <p>You created a ${type} account in Taboor.</p>
-        <p>Click the link below to verify your email:</p>
-        <p><a href="${verifyUrl}">${verifyUrl}</a></p>
-        <p>This link expires in 24 hours.</p>
+        <p>You created a ${type} account on Taboor.</p>
+        <p><a href="${verifyUrl}">Verify your email</a></p>
       </div>
-    `
-  });
+    `,
+  };
 
-  // self-note: Resend SDK returns {data,error}, not throw
-  if (error) {
-    throw new Error(
-      typeof error === "string"
-        ? error
-        : (error.message || JSON.stringify(error))
-    );
-  }
-
-  // self-note: keep id for debugging
-  return data; // usually { id: "..." }
+  await sgMail.send(msg);
 }
 
 
@@ -800,14 +787,14 @@ app.get("/test-email", async (req, res) => {
   try {
     const to = String(req.query.to || "");
     if (!to) return res.status(400).send("Missing ?to=email");
-
-    const data = await sendVerifyEmail(to, "https://example.com", "test");
-    return res.json({ ok: true, data }); // includes id
+    await sendVerifyEmail(to, "https://example.com", "test");
+    res.send("sent");
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ ok: false, error: String(e.message || e) });
+    res.status(500).send(e.message);
   }
 });
+
 
 
 
