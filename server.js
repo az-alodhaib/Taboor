@@ -358,12 +358,13 @@ const BASE_URL = process.env.BASE_URL || "http://localhost:3000";
 
 const transporter = nodemailer.createTransport({
   host: process.env.SMTP_HOST,
-  port: Number(process.env.SMTP_PORT || 465),
-  secure: String(process.env.SMTP_SECURE || "true") === "true",
+  port: Number(process.env.SMTP_PORT || 587),
+  secure: String(process.env.SMTP_SECURE || "false") === "true", // false for 587
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-  connectionTimeout: 10_000,
-  greetingTimeout: 10_000,
-  socketTimeout: 10_000
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 10000,
+  requireTLS: true
 });
 
 const MAIL_FROM = process.env.MAIL_FROM || process.env.SMTP_USER;
