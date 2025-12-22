@@ -302,16 +302,27 @@ function safeAddColumn(table, colDef) {
   });
 }
 
-// self-note: SQLite doesn't support IF NOT EXISTS for ADD COLUMN, so ignore errors
+
+  // =============================================
+  // DB MIGRATION (SAFE, AFTER TABLES EXIST)
+  // =============================================
+  // self-note: SQLite doesn't support IF NOT EXISTS for ADD COLUMN, so ignore errors
   (async () => {
+    try {
       await safeAddColumn("users", "email_verified INTEGER DEFAULT 0");
       await safeAddColumn("users", "email_verify_token TEXT");
       await safeAddColumn("users", "email_verify_expires INTEGER");
 
-    await safeAddColumn("businesses", "email_verified INTEGER DEFAULT 0");
-    await safeAddColumn("businesses", "email_verify_token TEXT");
-    await safeAddColumn("businesses", "email_verify_expires INTEGER");
+      await safeAddColumn("businesses", "email_verified INTEGER DEFAULT 0");
+      await safeAddColumn("businesses", "email_verify_token TEXT");
+      await safeAddColumn("businesses", "email_verify_expires INTEGER");
+
+      console.log("DB migration done");
+    }   catch (e) {
+      console.error("DB migration error:", e);
+    }
   })();
+
 
 // =============================================
 // GLOBAL UNIQUENESS HELPERS (users + businesses)

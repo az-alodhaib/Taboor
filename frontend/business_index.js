@@ -77,7 +77,10 @@ document.addEventListener('DOMContentLoaded', function () {
           body: JSON.stringify(businessData)
         });
 
-        const result = await response.json();
+        let result = {};
+        const text = await response.text();
+        try { result = JSON.parse(text); } catch { result = { error: text }; }
+
 
         if (response.ok) {
           alert("تم إرسال طلب إنشاء المنشأة للمراجعة بنجاح! ✅");
