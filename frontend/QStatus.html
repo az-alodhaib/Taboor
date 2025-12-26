@@ -70,6 +70,9 @@
         </div>
     </div>
 
+
+    <!-- (Removed) progress bar -->
+
     <div class="card mb-4">
       <div class="card-body">
         <h5 class="mb-3">خدماتك المختارة</h5>
@@ -87,8 +90,8 @@
     </div>
 
     <div class="d-grid gap-2">
+      <!-- Shows when you are next in line -->
       <button class="btn btn-done btn-done-appear" x-show="data.queue.position === 1" @click="confirmDone">تم</button>
-
 
       <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#leaveModal">
         مغادرة الطابور

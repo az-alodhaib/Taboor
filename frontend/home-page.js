@@ -277,6 +277,11 @@ function HomePage() {
       });
      });
 
+      // self-note: load queue overview so cards show real position/wait instead of defaults
+      await Promise.allSettled(
+        this.businesses.slice(0, 20).map((b) => this.loadQueueInfoForBusiness(b))
+      );
+
 
       } catch (error) {
         console.error(error);

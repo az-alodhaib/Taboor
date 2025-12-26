@@ -56,7 +56,6 @@ function QStatusPage() {
     _waitCountdownTimer: null,
     _notifiedNext: false,
 
-
     init() {
   try {
     const raw = localStorage.getItem("queueStatus");
@@ -76,7 +75,6 @@ function QStatusPage() {
           this.data.queue.estimationMinutes ??
           (this.data.queue.waitMinutes + this.data.queue.travelMinutes)
         );
-        
 
         // self-note: keep estMinutes synced so UI doesn't break anywhere else
         this.data.queue.estMinutes = this.data.queue.waitMinutes;
@@ -84,16 +82,28 @@ function QStatusPage() {
         this.refreshEtaTravelOnly();
 
       }
-    
+      // self-note: keep schema stable
+      this.data.queue.joinedAt = Number(this.data.queue.joinedAt || Date.now());
 
     }
   } catch (e) {}
 
   // self-note: start polling immediately (even if I'm next)
   this.startAutoRefresh();
+
+  // self-note: keep UI wait time counting down locally (server returns a fixed estimate)
   this._startWaitCountdown();
+  this._animateDots();
+  
   },
 
+    _animateDots() {
+      let i = 0;
+      setInterval(() => {
+        this.dots = ".".repeat((i % 3) + 1);
+        i++;
+      }, 500);
+    },
 
     _getUserId() {
       // self-note: support multiple storage keys to avoid breaking older login pages
@@ -159,7 +169,6 @@ async refreshQueueStatusFromServer() {
   return;
 }
 
-  
 
     this.data.queue = this.data.queue || {};
 
@@ -167,34 +176,27 @@ async refreshQueueStatusFromServer() {
     this.data.queue.status = json.status ?? this.data.queue.status ?? "waiting";
 
       // self-note: prefer ML wait if available, fallback to linear wait
-    const mlWait = Number(json.wait_minutes_ml);
-    const linearWait = Number(json.wait_minutes);
+      const mlWait = Number(json.wait_minutes_ml);
+      const linearWait = Number(json.wait_minutes);
 
-    const effectiveWait =
-     Number.isFinite(mlWait) && mlWait >= 0 ? mlWait :
-    (Number.isFinite(linearWait) && linearWait >= 0 ? linearWait : 0);
+      const effectiveWait =
+       Number.isFinite(mlWait) && mlWait >= 0 ? mlWait :
+      (Number.isFinite(linearWait) && linearWait >= 0 ? linearWait : 0);
 
     // self-note: position might be null if ticket finished
     this.data.queue.position = json.position != null ? Number(json.position) : null;
 
-    // self-note: notify when user becomes next in line
-    if (this.data.queue.position === 1 && !this._notifiedNext) {
-      this._notifiedNext = true;
-      this._notifyServiceReady("You are next. Please get ready.");
+    // self-note: only reset countdown when server estimate actually changes
+    const prevBase = Number(this._waitServerBaseMinutes);
+    if (!Number.isFinite(prevBase) || Math.abs(prevBase - effectiveWait) >= 1) {
+      this._waitServerBaseMinutes = effectiveWait;
+      this._waitSyncTs = Date.now();
     }
-    // self-note: sync server base wait and reset countdown
-    this._waitServerBaseMinutes = effectiveWait;
-    this._waitSyncTs = Date.now();
 
-    // self-note: show remaining minutes (countdown)
     const remainingNow = this._computeRemainingWaitMinutes();
     this.data.queue.waitMinutes = remainingNow;
-    this.data.queue.estMinutes = remainingNow;
-
-    // self-note: keep total estimation synced so UI always shows the latest wait time
-    const travelNow = Number(this.data.queue.etaMinutes ?? this.data.queue.travelMinutes ?? 0);
-    this.data.queue.estimationMinutes =
-    Number(this.data.queue.waitMinutes) + (Number.isFinite(travelNow) ? travelNow : 0);
+    this.data.queue.estMinutes = remainingNow; // backward compatibility
+    this.data.queue.totalPeople = Number(json.people_in_line ?? this.data.queue.totalPeople ?? 0);
 
 
     // keep business coords synced (ETA needs it)
@@ -205,29 +207,31 @@ async refreshQueueStatusFromServer() {
       this.data.business.longitude = json.business.longitude ?? this.data.business.longitude;
     }
 
+    // self-note: notify when user becomes next in line
+    if (this.data.queue.position === 1 && !this._notifiedNext) {
+      this._notifiedNext = true;
+      this._notifyServiceReady("You are next. Please get ready.");
+    }
+
     // self-note: if backend says ticket finished, show it clearly
   if (json.is_finished) {
-  this.stopAutoRefresh();
-  this._stopWaitCountdown();
+    this.stopAutoRefresh();
+    this._stopWaitCountdown();
 
-  // self-note: notify user service is ready / finished
-  this._notifyServiceReady("Your service is ready. Please proceed.");
+    const st = String(json.status || "").toLowerCase();
 
-  const st = String(json.status || "").toLowerCase();
-
-  if (st === "done") {
-    alert("✅ جاهزين لخدمتك!");
-  } else if (st === "left") {
-    alert("ℹ️ تم الانتهاء من خدمتك!");
-  } else if (st === "skipped") {
-    alert("ℹ️ تم تخطي دورك!");
-  }
+    if (st === "done") {
+      alert("✅ تم إكمال خدمتك بنجاح");
+    } else if (st === "left") {
+      alert("ℹ️ تم إنهاء تذكرتك (تم الخروج من الطابور).");
+    } else if (st === "skipped") {
+      alert("ℹ️ تم تخطي تذكرتك.");
+    }
 
   localStorage.removeItem("queueStatus");
   window.location.href = "home_page.html";
   return;
 }
-
     
     // self-note: refresh ETA sometimes (every 3 polls)
     this._etaPollCounter = (this._etaPollCounter || 0) + 1;
@@ -241,6 +245,7 @@ async refreshQueueStatusFromServer() {
     console.error(e);
   }
 },
+
 _computeRemainingWaitMinutes() {
   const base = Number(this._waitServerBaseMinutes);
   if (!Number.isFinite(base) || base <= 0) return 0;
@@ -252,19 +257,22 @@ _computeRemainingWaitMinutes() {
   const elapsedMin = elapsedMs / 60000;
   const remaining = base - elapsedMin;
 
-  return Math.max(0, Math.ceil(remaining));
+  // self-note: use floor so it actually decreases as time passes
+  return Math.max(0, Math.floor(remaining));
 },
 
 _startWaitCountdown() {
   if (this._waitCountdownTimer) clearInterval(this._waitCountdownTimer);
 
-  // self-note: update UI every second
   this._waitCountdownTimer = setInterval(() => {
     const remaining = this._computeRemainingWaitMinutes();
 
     this.data.queue = this.data.queue || {};
     this.data.queue.waitMinutes = remaining;
     this.data.queue.estMinutes = remaining;
+
+    const travelNow = Number(this.data.queue.etaMinutes ?? this.data.queue.travelMinutes ?? 0);
+    this.data.queue.estimationMinutes = Number(remaining) + (Number.isFinite(travelNow) ? travelNow : 0);
   }, 1000);
 },
 
@@ -308,24 +316,6 @@ _stopWaitCountdown() {
   }
 },
 
-  _notifyServiceReady(message) {
-   // self-note: request permission only once
-    if (!("Notification" in window)) return;
-
-    if (Notification.permission === "granted") {
-     new Notification("Taboor", { body: message });
-     return;
-    }
-
-    if (Notification.permission !== "denied") {
-     Notification.requestPermission().then(p => {
-        if (p === "granted") {
-         new Notification("Taboor", { body: message });
-        }
-     });
-   }
-  },
-
     async confirmLeave() {
       const queueId = this._getQueueId();
       const userId = this._getUserId();
@@ -364,7 +354,6 @@ _stopWaitCountdown() {
       }
 
       localStorage.removeItem("queueStatus");
-      this._stopWaitCountdown();
       window.location.href = "home_page.html";
     },
 
@@ -415,7 +404,6 @@ _stopWaitCountdown() {
 
       alert("تم إكمال خدمتك بنجاح 🎉");
       localStorage.removeItem("queueStatus");
-      this._stopWaitCountdown();
       window.location.href = "home_page.html";
     }
   };
