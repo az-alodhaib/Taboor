@@ -1291,7 +1291,8 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
           hourly_avg_service_time: Number(hourly_avg_service_time)
         };
 
-        const r = await fetch(`${ML_URL}/predict`, {
+          const predictUrl = new URL("predict", ML_URL).toString();
+          const r = await fetch(predictUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)

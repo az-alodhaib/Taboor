@@ -183,6 +183,10 @@ async refreshQueueStatusFromServer() {
        Number.isFinite(mlWait) && mlWait >= 0 ? mlWait :
       (Number.isFinite(linearWait) && linearWait >= 0 ? linearWait : 0);
 
+       this.data.queue.waitLabel =
+        Number.isFinite(mlWait) && mlWait >= 0 ? "تقدير ذكي" : "تقدير قياسي";
+
+
     // self-note: position might be null if ticket finished
     this.data.queue.position = json.position != null ? Number(json.position) : null;
 

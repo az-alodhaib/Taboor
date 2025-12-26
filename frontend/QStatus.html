@@ -48,6 +48,7 @@
         <div class="stat-card">
           <div class="label">وقت الانتظار</div>
           <div class="value" x-text="(data.queue.waitMinutes ?? data.queue.estMinutes ?? 0) + ' دقيقة'"></div>
+          <div class="small text-muted" x-text="data.queue.waitLabel"></div>
         </div>
       </div>
     </div>

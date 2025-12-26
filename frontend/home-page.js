@@ -485,7 +485,17 @@ function HomePage() {
         console.warn('ML call failed, using queue estimate:', err);
       }
       
-      let finalWaitMinutes = mlPrediction !== null ? mlPrediction : Number(b.waitTimeMinutes || 0);
+      const linearWait = Number(b.waitTimeMinutes || 0);
+      const mlWait = Number.isFinite(mlPrediction) ? Number(mlPrediction) : null;
+
+      // FINAL RULE: never underestimate
+      const finalWaitMinutes =
+      mlWait != null ? Math.max(linearWait, mlWait) : linearWait;
+
+      const waitLabel =
+      mlWait != null ? "تقدير ذكي" : "تقدير قياسي";
+
+
       // ===== END ML LOGIC =====
 
       const payload = {
@@ -526,6 +536,7 @@ function HomePage() {
         // self-note: prefer ML if available, otherwise use queue estimate
         estimationMinutes: Number(finalWaitMinutes || 0) + Number(b.travelMinutes || 0),
         estMinutes: Number(finalWaitMinutes || 0),
+        waitLabel: waitLabel,
         // self-note: persist join time so QStatus progress survives refresh
         joinedAt: Date.now()
     }
