@@ -64,9 +64,15 @@
           </div>
 
           <div class="fs-5 fw-bold">
-             <span x-show="data.queue.etaMinutes != null" x-text="data.queue.etaMinutes + ' دقيقة'"></span>
-             <span x-show="data.queue.etaMinutes == null" class="text-muted">غير متاح</span>
-            </div>
+          <span x-show="data.queue.estimationMinutes != null"
+              x-text="Math.max(0, Math.ceil(data.queue.estimationMinutes)) + ' دقيقة'">
+          </span>
+
+          <span x-show="data.queue.estimationMinutes == null"
+              class="text-muted">
+                   غير متاح
+          </span>
+          </div>
           </div>
         </div>
     </div>

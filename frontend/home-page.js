@@ -33,6 +33,23 @@ document.addEventListener("DOMContentLoaded", () => {
   });
 });
 
+let homePollTimer = null;
+
+function startHomeAutoRefresh() {
+  if (homePollTimer) clearInterval(homePollTimer);
+
+  homePollTimer = setInterval(async () => {
+    try {
+      // self-note: re-fetch and update only the data (not reload the page)
+      await loadBusinesses();          // if this fetches + re-renders cards
+      // OR if you already have "updateBusinessQueueOverview()"
+      // call that instead to avoid rebuilding HTML
+    } catch (e) {
+      console.log("Home auto-refresh failed:", e);
+    }
+  }, 60000); // 60s
+}
+
 
 
 // Set tax rate here once; currently 15%

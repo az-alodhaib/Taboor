@@ -4,10 +4,27 @@ const API_BASE = window.location.origin;
 // self-note: keep admin dropdown types synced with server
 let BUSINESS_TYPES = [];
 
+let adminPollTimer = null;
+
+function startAdminAutoRefresh() {
+  if (adminPollTimer) clearInterval(adminPollTimer);
+
+  // self-note: refresh only data, not the whole page
+  adminPollTimer = setInterval(async () => {
+    try {
+      await loadPendingBusinesses();
+      await loadPendingServices();
+    } catch (e) {
+      console.log("Admin auto-refresh failed:", e);
+    }
+  }, 15000); // every 15s
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
   await loadBusinessTypes();
   loadPendingBusinesses();
   loadPendingServices();
+  startAdminAutoRefresh();
   const logoutBtn = document.getElementById("btn-admin-logout");
 if (logoutBtn) {
   logoutBtn.addEventListener("click", async () => {
