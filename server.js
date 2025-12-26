@@ -45,7 +45,7 @@ async function sendVerifyEmail(to, verifyUrl, type = "business") {
 
 
 // ML service base URL (single source of truth)
-const ML_URL = process.env.ML_URL || "https://taboor-ml.onrender.com";
+const ML_URL = process.env.ML_URL || "https://taboor-ml.onrender.com/";
 
 
 // =============================================
