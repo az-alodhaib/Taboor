@@ -213,8 +213,6 @@ async refreshQueueStatusFromServer() {
   // self-note: notify user service is ready / finished
   this._notifyServiceReady("Your service is ready. Please proceed.");
 
-  this.progress = 100;
-
   const st = String(json.status || "").toLowerCase();
 
   if (st === "done") {

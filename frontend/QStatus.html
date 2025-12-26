@@ -70,15 +70,6 @@
         </div>
     </div>
 
-
-    <!-- Remove Bootstrap stripes/animation classes -->
-    <div class="progress position-relative mb-4">
-      <div class="progress-bar" role="progressbar"
-           :style="{ width: progress + '%' }"
-           aria-valuemin="0" aria-valuemax="100"></div>
-      <div class="progress-center" x-text="Math.floor(progress) + '% مكتمل'"></div>
-    </div>
-
     <div class="card mb-4">
       <div class="card-body">
         <h5 class="mb-3">خدماتك المختارة</h5>
@@ -96,8 +87,8 @@
     </div>
 
     <div class="d-grid gap-2">
-      <!-- Appears only when progress hits 100% -->
-      <button class="btn btn-done btn-done-appear" x-show="progress >= 100" @click="confirmDone">تم</button>
+      <button class="btn btn-done btn-done-appear" x-show="data.queue.position === 1" @click="confirmDone">تم</button>
+
 
       <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#leaveModal">
         مغادرة الطابور

@@ -23,46 +23,6 @@
   color: #1f2937;
 }
 
-/* ===== Progress Bar (visible gradient) ===== */
-.progress {
-  height: 22px;
-  background-color: #eef7ff; /* light track */
-  border-radius: 14px;
-  overflow: hidden;
-  position: relative;
-}
-
-/* Force visible single color (no stripes) */
-.progress-bar {
-  background: linear-gradient(90deg, #33cc99 0%, #66ccff 100%) !important;
-  transition: width 0.4s ease;
-  height: 100%;
-  border-radius: inherit;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-}
-
-/* Centered percentage text */
-.progress-center {
-  position: absolute;
-  inset-inline: 0;
-  top: 0;
-  text-align: center;
-  line-height: 22px;
-  font-weight: 700;
-  color: #08415c;
-}
-
-/* Caption above (top-left) */
-.progress-caption {
-  color: #2f3d4a;
-  font-weight: 600;
-  font-size: 0.95rem;
-}
-.dots {
-  font-weight: bold;
-  font-size: 1.1rem;
-  letter-spacing: 1px;
-}
 
 /* ===== Done Button (تم) ===== */
 .btn-done {

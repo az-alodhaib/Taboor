@@ -1263,7 +1263,7 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
         const arrival_hour = arrivalDate.getHours();
 
         const st = String(queue.service_name || "").trim(); // service_type
-        const sd = ""; // service_details (not used yet)
+        const sd = String(queue.service_name || "unknown").trim();
 
         const serviceAvg = await getSQL(
           `SELECT AVG(service_duration) as avg_time
