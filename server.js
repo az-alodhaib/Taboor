@@ -45,7 +45,10 @@ async function sendVerifyEmail(to, verifyUrl, type = "business") {
 
 
 // ML service base URL (single source of truth)
-const ML_URL = process.env.ML_URL || "https://taboor-ml.onrender.com/";
+const ML_URL = (process.env.ML_URL || "https://taboor-ml.onrender.com").trim();
+console.log("ML_URL env =", process.env.ML_URL);
+console.log("ML_URL final =", ML_URL);
+
 
 
 // =============================================
@@ -1042,11 +1045,18 @@ app.post('/predict-wait', async (req, res) => {
     };
 
     // self-note: call ML service (Node acts as feature-builder + validator)
-    const response = await fetch(`${ML_URL}/predict`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+    const predictUrl = new URL("predict", ML_URL).toString(); 
+    // NOTE: "predict" (no leading slash) works nicely with base URLs ending in "/"
+
+    console.log("ML predict URL =", predictUrl);
+
+     const response = await fetch(predictUrl, {
+       method: "POST",
+       headers: { "Content-Type": "application/json" },
+       body: JSON.stringify(payload),
     });
+
+
 
     // self-note: handle non-200 responses from ML (422/500/etc)
     if (!response.ok) {
