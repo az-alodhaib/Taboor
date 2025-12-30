@@ -1366,7 +1366,7 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     // ============================================
     // LINEAR BASELINE 
     // ============================================
-    //  people_ahead × service_duration
+    // Formula from PDF: people_ahead × service_duration
     // IMPORTANT: Position 1 (peopleAhead = 0) → ALWAYS 0 wait time
     
     let linear_wait_minutes = 0;
@@ -1469,21 +1469,53 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     }
 
     // ============================================
-    // FINAL DECISION RULE 
+    // FINAL DECISION RULE (with ±5 minute safety range)
     // ============================================
-    //  "To avoid underestimation and keep user trust, 
-    // the displayed wait time is the safer value"
+    // ML is trusted only if it's within ±5 minutes of linear estimate.
+    // This prevents ML from being wildly inaccurate.
+    //
+    // Example (1 person ahead, service = 15 min):
+    //   linear = 15, range = [10, 20]
+    //   ML = 12 → ✅ Use ML (within range)
+    //   ML = 5  → ❌ Use Linear (too low)
+    //   ML = 25 → ❌ Use Linear (too high)
     //
     // SPECIAL CASE: Position 1 (peopleAhead = 0) → ALWAYS 0 wait time
     
     let final_wait_minutes = 0;  // Default for position 1
+    let used_estimate = "position 1 = 0";
     
     if (peopleAhead > 0) {
-      final_wait_minutes = linear_wait_minutes;
+      const SAFETY_MARGIN = 5;  // ±5 minutes tolerance
+      const min_acceptable = Math.max(0, linear_wait_minutes - SAFETY_MARGIN);
+      const max_acceptable = linear_wait_minutes + SAFETY_MARGIN;
       
-      if (ml_wait_minutes !== null && Number.isFinite(ml_wait_minutes)) {
-        final_wait_minutes = Math.max(linear_wait_minutes, ml_wait_minutes);
+      if (ml_wait_minutes !== null && Number.isFinite(ml_wait_minutes) && ml_wait_minutes >= 0) {
+        // Check if ML is within acceptable range
+        if (ml_wait_minutes >= min_acceptable && ml_wait_minutes <= max_acceptable) {
+          // ML is within ±5 minutes of linear → Trust ML
+          final_wait_minutes = ml_wait_minutes;
+          used_estimate = "ML (within ±5 range)";
+        } else {
+          // ML is outside acceptable range → Use Linear (safer)
+          final_wait_minutes = linear_wait_minutes;
+          used_estimate = ml_wait_minutes < min_acceptable 
+            ? "Linear (ML too low)" 
+            : "Linear (ML too high)";
+        }
+      } else {
+        // ML failed or invalid → Use Linear
+        final_wait_minutes = linear_wait_minutes;
+        used_estimate = "Linear (ML unavailable)";
       }
+      
+      console.log("📊 ML Safety Check:", {
+        linear: linear_wait_minutes,
+        ml: ml_wait_minutes,
+        range: `[${min_acceptable}, ${max_acceptable}]`,
+        mlWithinRange: ml_wait_minutes >= min_acceptable && ml_wait_minutes <= max_acceptable,
+        decision: used_estimate
+      });
     }
 
     console.log("🔢 Wait calculation:", {
@@ -1493,7 +1525,7 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
       linear_wait_minutes,
       ml_wait_minutes,
       final_wait_minutes,
-      rule: peopleAhead === 0 ? "position 1 = 0" : (ml_wait_minutes !== null ? "max(linear, ml)" : "linear only")
+      rule: used_estimate
     });
 
     // ============================================
@@ -1648,6 +1680,7 @@ app.get('/queues/:queueId/members', async (req, res) => {
 // STEP DATABASE
 // PATCH /queue_members/:id/status
 // Update status of a specific ticket (waiting/called/skipped/done/left).
+// When status = "done", automatically save to historical_data for ML learning.
 app.patch('/queue_members/:id/status', async (req, res) => {
   const memberId = req.params.id;
   const { status } = req.body;
@@ -1658,6 +1691,17 @@ app.patch('/queue_members/:id/status', async (req, res) => {
   }
 
   try {
+    // Get current member data BEFORE updating (to calculate times)
+    const memberBefore = await getSQL(
+      `SELECT qm.*, q.business_id, q.service_id, s.name as service_name, s.duration_minutes
+       FROM queue_members qm
+       JOIN queues q ON q.id = qm.queue_id
+       LEFT JOIN services s ON s.id = q.service_id
+       WHERE qm.id = ?`,
+      [memberId]
+    );
+
+    // Update the status
     await runSQL(
       `UPDATE queue_members
        SET status = ?, updated_at = CURRENT_TIMESTAMP
@@ -1669,6 +1713,65 @@ app.patch('/queue_members/:id/status', async (req, res) => {
       `SELECT * FROM queue_members WHERE id = ?`,
       [memberId]
     );
+
+    // ============================================
+    // SAVE TO HISTORICAL DATA (when status = "done")
+    // ============================================
+    // This is how ML learns from real service completions!
+    
+    if (status === 'done' && memberBefore) {
+      try {
+        const joinedAt = new Date(memberBefore.joined_at);
+        const updatedAt = new Date(member.updated_at);
+        
+        // Calculate actual wait time (joined → now, in minutes)
+        // This is the total time from joining queue to service completion
+        const totalTimeMs = updatedAt - joinedAt;
+        const totalTimeMinutes = Math.round(totalTimeMs / 60000);
+        
+        // Estimate service duration (use business default or calculated)
+        // In a real system, you'd track when "called" happened too
+        const serviceDuration = Number(memberBefore.duration_minutes) || 15;
+        
+        // Wait time = total time - service duration
+        const waitTimeMinutes = Math.max(0, totalTimeMinutes - serviceDuration);
+        
+        // Get queue length at time of joining (approximate from ticket number)
+        const queueLength = Number(memberBefore.ticket_number) || 1;
+        
+        // Get arrival hour
+        const arrivalHour = joinedAt.getHours();
+        
+        // Save to historical_data
+        await runSQL(
+          `INSERT INTO historical_data 
+           (business_id, arrival_time, queue_length, service_type, service_details, wait_time, service_duration)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          [
+            memberBefore.business_id,
+            memberBefore.joined_at,
+            queueLength,
+            memberBefore.service_name || "unknown",
+            memberBefore.service_name || "unknown",
+            waitTimeMinutes,
+            serviceDuration
+          ]
+        );
+        
+        console.log("📊 Historical data saved:", {
+          business_id: memberBefore.business_id,
+          service: memberBefore.service_name,
+          wait_time: waitTimeMinutes,
+          service_duration: serviceDuration,
+          queue_length: queueLength,
+          arrival_hour: arrivalHour
+        });
+        
+      } catch (histErr) {
+        // Don't fail the main request if historical save fails
+        console.error("⚠️ Failed to save historical data:", histErr);
+      }
+    }
 
     res.json({ message: 'Status updated', member });
   } catch (err) {
