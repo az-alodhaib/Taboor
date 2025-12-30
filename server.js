@@ -1338,7 +1338,30 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     }
 
     const isActive = ["waiting", "called"].includes(me.status);
-    const baseMinutes = Number(queue.service_duration_minutes || 10);
+    
+    // ============================================
+    // SERVICE DURATION CALCULATION
+    // ============================================
+    // Problem: Queue has one service_id, but customers may select different services.
+    // Solution: Use AVERAGE duration of all active services for this business.
+    // This gives a more accurate estimate when customers choose different services.
+    
+    let baseMinutes = Number(queue.service_duration_minutes || 10);
+    
+    // Try to get average service duration for this business
+    const avgServiceDuration = await getSQL(
+      `SELECT AVG(duration_minutes) as avg_duration
+       FROM services
+       WHERE business_id = ? AND is_active = 1`,
+      [queue.business_id]
+    );
+    
+    if (avgServiceDuration?.avg_duration) {
+      baseMinutes = Math.round(Number(avgServiceDuration.avg_duration));
+      console.log("📊 Using average service duration:", baseMinutes, "min (from all services)");
+    } else {
+      console.log("📊 Using queue service duration:", baseMinutes, "min (single service)");
+    }
 
     // ============================================
     // POSITION CALCULATION
@@ -1486,7 +1509,7 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     let used_estimate = "position 1 = 0";
     
     if (peopleAhead > 0) {
-      const SAFETY_MARGIN = 5;  // ±5 minutes tolerance
+      const SAFETY_MARGIN = 3;  // ±3 minutes tolerance
       const min_acceptable = Math.max(0, linear_wait_minutes - SAFETY_MARGIN);
       const max_acceptable = linear_wait_minutes + SAFETY_MARGIN;
       
