@@ -8,7 +8,7 @@ let gUserMarker = null;
 let gUserInfoWindow = null;
 
 // ============================================
-// LOCATION PERMISSION (ONCE ON PAGE LOAD)
+// LOCATION PERMISSION
 // ============================================
 
 async function requestLocationOnPageLoad() {
@@ -20,48 +20,72 @@ async function requestLocationOnPageLoad() {
     return;
   }
 
-  // Show Arabic confirmation dialog
-  const userConsent = confirm(
-    "📍 سنحتاج إلى موقعك لحساب وقت الوصول (ETA) للمزود. هل توافق؟"
-  );
-
-  // Mark as asked regardless of answer
-  localStorage.setItem(KEY, "1");
-
-  if (!userConsent) {
-    console.log("❌ User denied location");
-    return;
-  }
-
-  try {
-    // Request browser location
-    const position = await new Promise((resolve, reject) => {
+  // Use setTimeout to ensure Safari is ready
+  setTimeout(async () => {
+    try {
+      // Check if geolocation is available
       if (!navigator.geolocation) {
-        reject(new Error("Geolocation not supported"));
+        console.warn("❌ Geolocation not supported");
+        localStorage.setItem(KEY, "1");
         return;
       }
 
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 30000
-      });
-    });
+      // Show Arabic confirmation dialog
+      const userConsent = confirm(
+        "📍 سنحتاج إلى موقعك لحساب وقت الوصول (ETA) للمزود. هل توافق؟"
+      );
 
-    const loc = {
-      lat: position.coords.latitude,
-      lng: position.coords.longitude
-    };
+      // Mark as asked regardless of answer
+      localStorage.setItem(KEY, "1");
 
-    // Save to localStorage for QStatus
-    localStorage.setItem("userLocation", JSON.stringify(loc));
+      if (!userConsent) {
+        console.log("❌ User denied location");
+        return;
+      }
 
-    console.log("✅ Location saved:", loc);
-    
-  } catch (error) {
-    console.error("❌ Location error:", error);
-    alert("لم نتمكن من الحصول على موقعك. لن يتم عرض وقت الوصول (ETA).");
-  }
+      // Request browser location with mobile-friendly settings
+      navigator.geolocation.getCurrentPosition(
+        // Success callback
+        (position) => {
+          const loc = {
+            lat: position.coords.latitude,
+            lng: position.coords.longitude
+          };
+
+          // Save to localStorage for QStatus
+          localStorage.setItem("userLocation", JSON.stringify(loc));
+
+          console.log("✅ Location saved:", loc);
+        },
+        // Error callback
+        (error) => {
+          console.error("❌ Location error:", error.code, error.message);
+          
+          let errorMsg = "لم نتمكن من الحصول على موقعك.";
+          
+          if (error.code === 1) {
+            errorMsg = "تم رفض الوصول للموقع. يرجى السماح بالوصول في إعدادات المتصفح.";
+          } else if (error.code === 2) {
+            errorMsg = "لم نتمكن من تحديد موقعك. تأكد من تفعيل GPS.";
+          } else if (error.code === 3) {
+            errorMsg = "انتهت مهلة تحديد الموقع. حاول مرة أخرى.";
+          }
+          
+          alert(errorMsg + " لن يتم عرض وقت الوصول (ETA).");
+        },
+        // Options (mobile-friendly)
+        {
+          enableHighAccuracy: false, // false is faster on mobile
+          timeout: 15000, // longer timeout for mobile
+          maximumAge: 60000 //  allow cached location
+        }
+      );
+      
+    } catch (error) {
+      console.error("❌ Unexpected location error:", error);
+      localStorage.setItem(KEY, "1");
+    }
+  }, 500); // Delay for Safari compatibility
 }
 // ==========================
 // Configurations
@@ -295,7 +319,7 @@ function HomePage() {
 
     // Initialization
    async init() {
-  // Location was already requested on page load 
+  // Location was already requested on page load (see above)
   // Just check if it exists
   try {
     const raw = localStorage.getItem("userLocation");

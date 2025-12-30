@@ -51,10 +51,10 @@ function QStatusPage() {
     
     dots: "",
     
-    // Wait time countdown state
-    _waitServerBaseMinutes: null,
-    _waitSyncTimestamp: null,
-    _waitCountdownTimer: null,
+    // Wait time countdown state - NEVER reset from localStorage
+    _serverWaitMinutes: null,
+    _lastServerUpdate: null,
+    _countdownTimer: null,
     
     // Polling state
     _pollTimer: null,
@@ -71,13 +71,13 @@ function QStatusPage() {
     init() {
       console.log("🚀 QStatus page initializing...");
       
-      // Load saved queue data
+      // Load saved queue data (but DON'T use wait time from it)
       this.loadQueueDataFromStorage();
       
       // Get user location FROM localStorage (home page already asked)
       this._loadUserLocationFromStorage();
       
-      // Start polling queue status
+      // Start polling queue status (will set wait time from server)
       this.startAutoRefresh();
       
       // Start wait time countdown
@@ -111,7 +111,7 @@ function QStatusPage() {
     },
 
     // ============================================
-    // LOAD SAVED DATA
+    // LOAD SAVED DATA (WITHOUT wait time)
     // ============================================
     
     loadQueueDataFromStorage() {
@@ -128,35 +128,20 @@ function QStatusPage() {
         // Ensure queue object exists
         this.data.queue = this.data.queue || {};
         
-        // 🔥 FIX: Calculate elapsed time since joining
-        const joinedAt = Number(this.data.queue.joinedAt || Date.now());
-        const elapsedMs = Math.max(0, Date.now() - joinedAt);
-        const elapsedMin = elapsedMs / 60000;
+        // 🔥 CRITICAL FIX: DO NOT load waitMinutes from localStorage
+        // Server will provide fresh wait time on first poll
+        this.data.queue.waitMinutes = 0; // Temporary until server responds
         
-        // 🔥 FIX: Subtract elapsed time from original wait
-        const originalWait = Number(this.data.queue.waitMinutes || 0);
-        const currentWait = Math.max(0, Math.floor(originalWait - elapsedMin));
-        
-        // Initialize all timing fields
-        this.data.queue.waitMinutes = currentWait;
         this.data.queue.etaMinutes = this.data.queue.etaMinutes || null;
-        this.data.queue.estimationMinutes = Number(this.data.queue.estimationMinutes || 0);
+        this.data.queue.estimationMinutes = 0;
         this.data.queue.position = this.data.queue.position || null;
         this.data.queue.status = this.data.queue.status || "waiting";
         this.data.queue.waitLabel = this.data.queue.waitLabel || "قياسي";
         this.data.queue.queueId = this.data.queue.queueId || null;
         this.data.queue.memberId = this.data.queue.memberId || null;
-        this.data.queue.joinedAt = joinedAt;
+        this.data.queue.joinedAt = Number(this.data.queue.joinedAt || Date.now());
         
-        // 🔥 FIX: Set sync timestamp to NOW (not when originally joined)
-        this._waitServerBaseMinutes = currentWait;
-        this._waitSyncTimestamp = Date.now();
-        
-        console.log("✅ Loaded queue data:", {
-          originalWait,
-          elapsedMin: Math.floor(elapsedMin),
-          currentWait
-        });
+        console.log("✅ Loaded queue data (wait time will come from server)");
         
       } catch (e) {
         console.error("❌ Failed to load queue data:", e);
@@ -262,10 +247,19 @@ function QStatusPage() {
         const linearWait = Number(json.wait_minutes);
         
         // Use ML if available and valid, otherwise linear
-        const effectiveWait = 
+        let effectiveWait = 
           (Number.isFinite(mlWait) && mlWait >= 0) ? mlWait : 
           (Number.isFinite(linearWait) && linearWait >= 0) ? linearWait : 
           0;
+        
+        // 🔥 FIX: If position = 1 and people_ahead = 0, wait time = 0
+        const position = Number(json.position || 0);
+        const peopleAhead = Number(json.people_ahead || 0);
+        
+        if (position === 1 && peopleAhead === 0) {
+          effectiveWait = 0;
+          console.log("🎯 You're next! Wait time set to 0");
+        }
         
         // Set label based on source
         this.data.queue.waitLabel = 
@@ -275,6 +269,8 @@ function QStatusPage() {
           ml: mlWait,
           linear: linearWait,
           effective: effectiveWait,
+          position,
+          peopleAhead,
           label: this.data.queue.waitLabel
         });
 
@@ -282,13 +278,13 @@ function QStatusPage() {
         // SYNC COUNTDOWN ONLY IF ESTIMATE CHANGED
         // ============================================
         
-        const prevBase = Number(this._waitServerBaseMinutes);
-        const estimateChanged = !Number.isFinite(prevBase) || Math.abs(prevBase - effectiveWait) >= 1;
+        const prevWait = Number(this._serverWaitMinutes);
+        const waitChanged = !Number.isFinite(prevWait) || Math.abs(prevWait - effectiveWait) >= 1;
         
-        if (estimateChanged) {
-          console.log("🔄 Wait estimate changed:", prevBase, "→", effectiveWait);
-          this._waitServerBaseMinutes = effectiveWait;
-          this._waitSyncTimestamp = Date.now();
+        if (waitChanged) {
+          console.log("🔄 Server wait time changed:", prevWait, "→", effectiveWait);
+          this._serverWaitMinutes = effectiveWait;
+          this._lastServerUpdate = Date.now();
         }
 
         // Update UI with current countdown value
@@ -299,7 +295,7 @@ function QStatusPage() {
         // UPDATE OTHER FIELDS
         // ============================================
         
-        this.data.queue.position = json.position != null ? Number(json.position) : null;
+        this.data.queue.position = position || null;
         this.data.queue.totalPeople = Number(json.people_in_line || 0);
         this.data.queue.status = json.status || "waiting";
 
@@ -361,23 +357,23 @@ function QStatusPage() {
     // ============================================
     
     _computeRemainingWaitMinutes() {
-      const base = Number(this._waitServerBaseMinutes);
-      if (!Number.isFinite(base) || base <= 0) return 0;
+      const serverWait = Number(this._serverWaitMinutes);
+      if (!Number.isFinite(serverWait) || serverWait <= 0) return 0;
 
-      const syncTs = Number(this._waitSyncTimestamp);
-      if (!Number.isFinite(syncTs) || syncTs <= 0) return Math.max(0, Math.ceil(base));
+      const lastUpdate = Number(this._lastServerUpdate);
+      if (!Number.isFinite(lastUpdate) || lastUpdate <= 0) return Math.max(0, Math.ceil(serverWait));
 
-      const elapsedMs = Math.max(0, Date.now() - syncTs);
+      const elapsedMs = Math.max(0, Date.now() - lastUpdate);
       const elapsedMin = elapsedMs / 60000;
-      const remaining = base - elapsedMin;
+      const remaining = serverWait - elapsedMin;
 
       return Math.max(0, Math.floor(remaining));
     },
 
     _startWaitCountdown() {
-      if (this._waitCountdownTimer) clearInterval(this._waitCountdownTimer);
+      if (this._countdownTimer) clearInterval(this._countdownTimer);
 
-      this._waitCountdownTimer = setInterval(() => {
+      this._countdownTimer = setInterval(() => {
         const remaining = this._computeRemainingWaitMinutes();
         this.data.queue.waitMinutes = remaining;
 
@@ -388,9 +384,9 @@ function QStatusPage() {
     },
 
     _stopWaitCountdown() {
-      if (this._waitCountdownTimer) {
-        clearInterval(this._waitCountdownTimer);
-        this._waitCountdownTimer = null;
+      if (this._countdownTimer) {
+        clearInterval(this._countdownTimer);
+        this._countdownTimer = null;
       }
     },
 
