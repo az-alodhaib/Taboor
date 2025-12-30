@@ -1298,21 +1298,24 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     // ============================================
     // LINEAR BASELINE 
     // ============================================
+    // Formula from  people_ahead × service_duration
+    // IMPORTANT: Position 1 (peopleAhead = 0) → ALWAYS 0 wait time
     
     let linear_wait_minutes = 0;
     
-    if (isActive) {
-      // Formula from PDF: people_ahead × service_duration
+    if (isActive && peopleAhead > 0) {
       linear_wait_minutes = peopleAhead * baseMinutes;
     }
 
     // ============================================
     // MACHINE LEARNING PREDICTION 
     // ============================================
+    // IMPORTANT: Only call ML if there are people ahead (position > 1)
+    // Position 1 should ALWAYS have 0 wait time - no ML prediction needed
     
     let ml_wait_minutes = null;
     
-    if (isActive) {
+    if (isActive && peopleAhead > 0) {
       try {
         const arrivalDate = new Date();
         const arrival_hour = arrivalDate.getHours();
@@ -1338,10 +1341,12 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
         const hourly_avg_service_time = Number(hourlyAvg?.hourly_avg) || baseMinutes;
 
         // ML payload
+        //  Use peopleAhead instead of totalInLine
+        // ML should predict based on people AHEAD of the user, not total queue
         const payload = {
           business_id: String(queue.business_id),
           arrival_hour: Number(arrival_hour),
-          queue_length: Number(totalInLine),
+          queue_length: Number(peopleAhead),  // was totalInLine
           service_type: st,
           service_details: sd,
           avg_service_time: Number(avg_service_time),
@@ -1374,13 +1379,19 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     // ============================================
     // FINAL DECISION RULE 
     // ============================================
-    
-    // "To avoid underestimation and keep user trust, 
+    // From  "To avoid underestimation and keep user trust, 
     // the displayed wait time is the safer value"
-    let final_wait_minutes = linear_wait_minutes;
+    //
+    // SPECIAL CASE: Position 1 (peopleAhead = 0) → ALWAYS 0 wait time
     
-    if (ml_wait_minutes !== null && Number.isFinite(ml_wait_minutes)) {
-      final_wait_minutes = Math.max(linear_wait_minutes, ml_wait_minutes);
+    let final_wait_minutes = 0;  // Default for position 1
+    
+    if (peopleAhead > 0) {
+      final_wait_minutes = linear_wait_minutes;
+      
+      if (ml_wait_minutes !== null && Number.isFinite(ml_wait_minutes)) {
+        final_wait_minutes = Math.max(linear_wait_minutes, ml_wait_minutes);
+      }
     }
 
     console.log("🔢 Wait calculation:", {
@@ -1390,7 +1401,7 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
       linear_wait_minutes,
       ml_wait_minutes,
       final_wait_minutes,
-      rule: ml_wait_minutes !== null ? "max(linear, ml)" : "linear only"
+      rule: peopleAhead === 0 ? "position 1 = 0" : (ml_wait_minutes !== null ? "max(linear, ml)" : "linear only")
     });
 
     // ============================================

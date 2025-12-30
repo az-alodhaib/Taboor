@@ -211,36 +211,30 @@ function QStatusPage() {
         console.log("📥 Server:", json);
 
         // ============================================
-        // WAIT TIME CALCULATION 
+        // WAIT TIME FROM SERVER 
         // ============================================
-        //  "To avoid underestimation and keep user trust,
-        // the displayed wait time is the safer value"
+        // Server already calculates the final wait time using:
+        // - Position 1 (no one ahead) = 0 wait time
+        // - Position 2+ = max(linear, ml) where linear = peopleAhead × service_duration
         //
-        // Formula: final_wait_minutes = max(linear, ml) if ml is valid, else linear
-        //
-        // Why? ML learns from real data and is often MORE accurate than simple math.
-        // If ML predicts higher (e.g., rush hour), we use ML.
-        // If ML predicts lower, we use linear (safer, avoids underestimation).
+        // We use wait_minutes_final directly from server
         
-        const linearWait = Number(json.wait_minutes);        // Simple: position × service_time
-        const mlWait = Number(json.wait_minutes_ml);         // ML prediction (or null if failed)
+        const finalWait = Number(json.wait_minutes_final);  // Server's final decision
+        const mlWait = json.wait_minutes_ml;                 // For label display only
         
-        let effectiveWait = linearWait; // Default to linear baseline
+        // Use server's calculation (already handles position 1 = 0)
+        const effectiveWait = Number.isFinite(finalWait) ? finalWait : 0;
         
-        // If ML prediction is valid, use the HIGHER value (safer)
-        if (Number.isFinite(mlWait) && mlWait >= 0) {
-          effectiveWait = Math.max(linearWait, mlWait);
-        }
-        
-        // Set label based on which estimate was used
+        // Set label based on whether ML was used
         this.data.queue.waitLabel = 
-          (Number.isFinite(mlWait) && mlWait >= 0) ? "تقدير ذكي" : "تقدير قياسي";
+          (mlWait !== null && Number.isFinite(mlWait) && mlWait >= 0) ? "تقدير ذكي" : "تقدير قياسي";
 
-        console.log("⏱️ Wait calculation:", {
-          linear: linearWait,
+        console.log("⏱️ Wait from server:", {
+          position: json.position,
+          peopleAhead: json.people_ahead,
+          linear: json.wait_minutes,
           ml: mlWait,
           final: effectiveWait,
-          rule: Number.isFinite(mlWait) ? "max(linear, ml)" : "linear only",
           label: this.data.queue.waitLabel
         });
 

@@ -575,26 +575,39 @@ function HomePage() {
 
       const b = this.selectedBusiness;
       
-        // ===== NEW: ADD ML LOGIC HERE =====
+      // ===== WAIT TIME CALCULATION =====
+      // peopleAhead = number of people who would be ahead of this user
+      // If queue is empty (queuePeople = 0), user will be position 1 with 0 wait
+      const peopleAhead = Number(b.queuePeople || 0);
+      
       let mlPrediction = null;
-      try {
-        mlPrediction = await this.getMLPrediction(b, chosenServices);
-      } catch (err) {
-        console.warn('ML call failed, using queue estimate:', err);
+      let finalWaitMinutes = 0;  // Default for position 1 (no one ahead)
+      let waitLabel = "تقدير قياسي";
+      
+      // Only calculate wait time if there are people ahead
+      if (peopleAhead > 0) {
+        try {
+          mlPrediction = await this.getMLPrediction(b, chosenServices);
+        } catch (err) {
+          console.warn('ML call failed, using queue estimate:', err);
+        }
+        
+        const linearWait = Number(b.waitTimeMinutes || 0);
+        const mlWait = Number.isFinite(mlPrediction) ? Number(mlPrediction) : null;
+
+        // FINAL RULE: never underestimate (use max of linear and ML)
+        finalWaitMinutes = mlWait != null ? Math.max(linearWait, mlWait) : linearWait;
+        waitLabel = mlWait != null ? "تقدير ذكي" : "تقدير قياسي";
       }
       
-      const linearWait = Number(b.waitTimeMinutes || 0);
-      const mlWait = Number.isFinite(mlPrediction) ? Number(mlPrediction) : null;
-
-      // FINAL RULE: never underestimate
-      const finalWaitMinutes =
-      mlWait != null ? Math.max(linearWait, mlWait) : linearWait;
-
-      const waitLabel =
-      mlWait != null ? "تقدير ذكي" : "تقدير قياسي";
-
-
-      // ===== END ML LOGIC =====
+      console.log("⏱️ Wait calculation (home):", {
+        peopleAhead,
+        linearWait: b.waitTimeMinutes,
+        mlWait: mlPrediction,
+        final: finalWaitMinutes,
+        label: waitLabel
+      });
+      // ===== END WAIT TIME CALCULATION =====
 
       const payload = {
         business: {
