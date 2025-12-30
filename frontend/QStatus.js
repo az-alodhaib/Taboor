@@ -1,7 +1,7 @@
 const API_BASE = window.location.origin;
 
 // ============================================
-// ETA HELPER (Backend call only)
+// ETA HELPER
 // ============================================
 
 async function getTrafficEtaMinutes(origin, destination) {
@@ -20,13 +20,13 @@ async function getTrafficEtaMinutes(origin, destination) {
 
     return Math.max(1, Math.round(sec / 60));
   } catch (e) {
-    console.error("❌ ETA API error:", e);
+    console.error("❌ ETA error:", e);
     return null;
   }
 }
 
 // ============================================
-// MAIN ALPINE COMPONENT
+// MAIN COMPONENT
 // ============================================
 
 function QStatusPage() {
@@ -44,107 +44,92 @@ function QStatusPage() {
         waitLabel: "جاري التحميل...",
         status: "waiting",
         queueId: null,
-        memberId: null,
-        joinedAt: null
+        memberId: null
       }
     },
     
     dots: "",
     
-    // Wait time countdown state - NEVER reset from localStorage
-    _serverWaitMinutes: null,
-    _lastServerUpdate: null,
-    _countdownTimer: null,
+    // ============================================
+    // COUNTDOWN STATE (never from localStorage)
+    // ============================================
+    // These variables control the wait time countdown.
+    // They are reset ONLY when position changes (someone ahead leaves/finishes).
+    // This prevents countdown from resetting on page refresh.
+    _baseWaitMinutes: null,        // Initial wait time from server
+    _countdownStartTime: null,     // When countdown started (timestamp)
+    _countdownTimer: null,         // Interval timer for countdown
     
-    // Polling state
-    _pollTimer: null,
-    _etaPollCounter: 0,
-    _notifiedNext: false,
-    
-    // User location (from home page)
-    _userLocation: null,
+    _pollTimer: null,              // Auto-refresh timer (polls server every 5s)
+    _etaPollCounter: 0,            // Counter to refresh ETA every 15s (3 polls)
+    _notifiedNext: false,          // Track if "you're next" notification was shown
+    _userLocation: null,           // User's GPS location (from home page)
+    _lastPosition: null,           // Track last position to detect queue changes
 
     // ============================================
-    // INIT - Load data and start systems
+    // INIT
     // ============================================
     
     init() {
-      console.log("🚀 QStatus page initializing...");
+      console.log("🚀 QStatus initializing...");
       
-      // Load saved queue data (but DON'T use wait time from it)
       this.loadQueueDataFromStorage();
-      
-      // Get user location FROM localStorage (home page already asked)
       this._loadUserLocationFromStorage();
-      
-      // Start polling queue status (will set wait time from server)
       this.startAutoRefresh();
-      
-      // Start wait time countdown
       this._startWaitCountdown();
-      
-      // Animate dots
       this._animateDots();
-      
-      // Calculate ETA immediately
       this.refreshEtaTravelOnly();
       
-      console.log("✅ QStatus page ready");
+      console.log("✅ QStatus ready");
     },
 
     // ============================================
     // LOAD USER LOCATION (from home page)
     // ============================================
+    // Location was requested on home page and saved to localStorage.
+    // We just read it here (no permission prompt on QStatus).
     
     _loadUserLocationFromStorage() {
       try {
         const raw = localStorage.getItem("userLocation");
         if (raw) {
           this._userLocation = JSON.parse(raw);
-          console.log("✅ User location loaded:", this._userLocation);
-        } else {
-          console.warn("⚠️ No user location in localStorage");
+          console.log("✅ Location loaded:", this._userLocation);
         }
       } catch (e) {
-        console.warn("⚠️ Failed to load user location:", e);
+        console.warn("⚠️ Location load failed:", e);
       }
     },
 
     // ============================================
-    // LOAD SAVED DATA (WITHOUT wait time)
+    // LOAD QUEUE DATA (without wait time)
     // ============================================
+    // We load business/services info from localStorage,
+    // but NEVER load waitMinutes (it must come from server).
     
     loadQueueDataFromStorage() {
       try {
         const raw = localStorage.getItem("queueStatus");
-        if (!raw) {
-          console.warn("⚠️ No queue data in localStorage");
-          return;
-        }
+        if (!raw) return;
         
         const parsed = JSON.parse(raw);
         this.data = parsed;
-        
-        // Ensure queue object exists
         this.data.queue = this.data.queue || {};
         
-        // 🔥 CRITICAL FIX: DO NOT load waitMinutes from localStorage
+        //  CRITICAL: DO NOT load waitMinutes from storage
         // Server will provide fresh wait time on first poll
-        this.data.queue.waitMinutes = 0; // Temporary until server responds
-        
+        this.data.queue.waitMinutes = 0;
         this.data.queue.etaMinutes = this.data.queue.etaMinutes || null;
         this.data.queue.estimationMinutes = 0;
         this.data.queue.position = this.data.queue.position || null;
         this.data.queue.status = this.data.queue.status || "waiting";
-        this.data.queue.waitLabel = this.data.queue.waitLabel || "قياسي";
+        this.data.queue.waitLabel = "جاري التحميل...";
         this.data.queue.queueId = this.data.queue.queueId || null;
         this.data.queue.memberId = this.data.queue.memberId || null;
-        this.data.queue.joinedAt = Number(this.data.queue.joinedAt || Date.now());
         
-        console.log("✅ Loaded queue data (wait time will come from server)");
-        
+        console.log("✅ Queue data loaded (wait time will come from server)");
       } catch (e) {
-        console.error("❌ Failed to load queue data:", e);
+        console.error("❌ Load failed:", e);
       }
     },
 
@@ -183,24 +168,17 @@ function QStatusPage() {
     // ============================================
     // AUTO-REFRESH POLLING
     // ============================================
+    // Poll server every 5 seconds to get fresh queue status.
     
     startAutoRefresh() {
       if (this._pollTimer) clearInterval(this._pollTimer);
-
-      // Poll every 5 seconds
-      this._pollTimer = setInterval(() => {
-        this.refreshQueueStatusFromServer();
-      }, 5000);
-
-      // Run immediately
+      this._pollTimer = setInterval(() => this.refreshQueueStatusFromServer(), 5000);
       this.refreshQueueStatusFromServer();
     },
 
     stopAutoRefresh() {
-      if (this._pollTimer) {
-        clearInterval(this._pollTimer);
-        this._pollTimer = null;
-      }
+      if (this._pollTimer) clearInterval(this._pollTimer);
+      this._pollTimer = null;
     },
 
     // ============================================
@@ -212,10 +190,7 @@ function QStatusPage() {
         const queueId = this._getQueueId();
         const userId = this._getUserId();
         
-        if (!queueId || !userId) {
-          console.warn("⚠️ Missing queueId or userId");
-          return;
-        }
+        if (!queueId || !userId) return;
 
         const res = await fetch(
           `${API_BASE}/queues/${queueId}/user-status?user_id=${encodeURIComponent(userId)}`
@@ -223,100 +198,90 @@ function QStatusPage() {
         
         const json = await res.json().catch(() => ({}));
 
-        // Handle errors
         if (!res.ok) {
           if (res.status === 404) {
-            console.warn("❌ Ticket not found (user left or queue reset)");
             this.stopAutoRefresh();
             localStorage.removeItem("queueStatus");
             window.location.href = "home_page.html";
             return;
           }
-          
-          console.warn("⚠️ Server error:", res.status, json);
           return;
         }
 
-        console.log("📥 Server response:", json);
+        console.log("📥 Server:", json);
 
         // ============================================
-        // UPDATE WAIT TIME (ML vs LINEAR LOGIC)
+        // WAIT TIME CALCULATION 
         // ============================================
+        //  "To avoid underestimation and keep user trust,
+        // the displayed wait time is the safer value"
+        //
+        // Formula: final_wait_minutes = max(linear, ml) if ml is valid, else linear
+        //
+        // Why? ML learns from real data and is often MORE accurate than simple math.
+        // If ML predicts higher (e.g., rush hour), we use ML.
+        // If ML predicts lower, we use linear (safer, avoids underestimation).
         
-        const mlWait = Number(json.wait_minutes_ml);
-        const linearWait = Number(json.wait_minutes);
+        const linearWait = Number(json.wait_minutes);        // Simple: position × service_time
+        const mlWait = Number(json.wait_minutes_ml);         // ML prediction (or null if failed)
         
-        // Use ML if available and valid, otherwise linear
-        let effectiveWait = 
-          (Number.isFinite(mlWait) && mlWait >= 0) ? mlWait : 
-          (Number.isFinite(linearWait) && linearWait >= 0) ? linearWait : 
-          0;
+        let effectiveWait = linearWait; // Default to linear baseline
         
-        // 🔥 FIX: If position = 1 and people_ahead = 0, wait time = 0
-        const position = Number(json.position || 0);
-        const peopleAhead = Number(json.people_ahead || 0);
-        
-        if (position === 1 && peopleAhead === 0) {
-          effectiveWait = 0;
-          console.log("🎯 You're next! Wait time set to 0");
+        // If ML prediction is valid, use the HIGHER value (safer)
+        if (Number.isFinite(mlWait) && mlWait >= 0) {
+          effectiveWait = Math.max(linearWait, mlWait);
         }
         
-        // Set label based on source
+        // Set label based on which estimate was used
         this.data.queue.waitLabel = 
           (Number.isFinite(mlWait) && mlWait >= 0) ? "تقدير ذكي" : "تقدير قياسي";
 
         console.log("⏱️ Wait calculation:", {
-          ml: mlWait,
           linear: linearWait,
-          effective: effectiveWait,
-          position,
-          peopleAhead,
+          ml: mlWait,
+          final: effectiveWait,
+          rule: Number.isFinite(mlWait) ? "max(linear, ml)" : "linear only",
           label: this.data.queue.waitLabel
         });
 
         // ============================================
-        //  SYNC COUNTDOWN ONLY IF QUEUE CHANGED
+        // COUNTDOWN RESET LOGIC
         // ============================================
-
-        // Check if my position in queue changed (someone left/skipped)
-        const prevPosition = this.data.queue.position;
+        // Only reset countdown if:
+        // 1. First poll (baseWaitMinutes is null)
+        // 2. Position changed (someone ahead finished/left)
+        //
+        // This prevents countdown from resetting on page refresh!
+        
         const newPosition = Number(json.position || 0);
-        const positionChanged = prevPosition !== newPosition;
-
-        // Check if server estimate changed significantly
-        const prevWait = Number(this._serverWaitMinutes);
-        const estimateChanged = !Number.isFinite(prevWait) || Math.abs(prevWait - effectiveWait) >= 2;
-
-        // ONLY reset countdown if:
-        // 1. Position changed (someone ahead left/skipped)
-        // 2. OR server estimate changed by 2+ minutes
-        // 3. OR this is first poll (prevWait is null)
-        if (positionChanged || estimateChanged || !Number.isFinite(prevWait)) {
-          console.log("🔄 Queue changed - resetting countdown:", {
-            positionChanged,
-            estimateChanged,
-            prevPosition,
+        const positionChanged = this._lastPosition !== null && this._lastPosition !== newPosition;
+        
+        if (this._baseWaitMinutes === null || positionChanged) {
+          console.log("🔄 Countdown reset:", {
+            reason: this._baseWaitMinutes === null ? "first poll" : "position changed",
+            oldPosition: this._lastPosition,
             newPosition,
-            prevWait,
-            effectiveWait
-        });
-  
-         this._serverWaitMinutes = effectiveWait;
-           this._lastServerUpdate = Date.now();
-        } else {
-          // countdown running smoothly
-          console.log("✅ Queue unchanged - countdown continues");
-      }
+            newWaitMinutes: effectiveWait
+          });
+          
+          this._baseWaitMinutes = effectiveWait;
+          this._countdownStartTime = Date.now();
+        }
+        
+        this._lastPosition = newPosition;
+
+        // Update current countdown value
+        const remainingNow = this._computeRemainingWaitMinutes();
+        this.data.queue.waitMinutes = remainingNow;
 
         // ============================================
         // UPDATE OTHER FIELDS
         // ============================================
         
-        this.data.queue.position = position || null;
+        this.data.queue.position = newPosition || null;
         this.data.queue.totalPeople = Number(json.people_in_line || 0);
         this.data.queue.status = json.status || "waiting";
 
-        // Update business data (needed for ETA)
         if (json.business) {
           this.data.business.name = json.business.name || this.data.business.name;
           this.data.business.latitude = json.business.latitude || this.data.business.latitude;
@@ -342,18 +307,27 @@ function QStatusPage() {
           
           const status = String(json.status || "").toLowerCase();
           
-          if (status === "done") {
-            alert("✅ تم إكمال خدمتك بنجاح");
-          } else if (status === "left") {
-            alert("ℹ️ تم إنهاء تذكرتك (تم الخروج من الطابور).");
-          } else if (status === "skipped") {
-            alert("ℹ️ تم تخطي تذكرتك.");
-          }
+          if (status === "done") alert("✅ تم إكمال خدمتك بنجاح");
+          else if (status === "left") alert("ℹ️ تم إنهاء تذكرتك.");
+          else if (status === "skipped") alert("ℹ️ تم تخطي تذكرتك.");
           
           localStorage.removeItem("queueStatus");
           window.location.href = "home_page.html";
           return;
         }
+
+        // ============================================
+        //  UPDATE ESTIMATION (wait + travel)
+        // ============================================
+        //  "total_eta_minutes = remaining_wait_minutes + travel_minutes"
+        //
+        // This is the TOTAL time until service starts:
+        // - Wait time: time until your turn
+        // - Travel time: drive time from current location to business
+        
+        const currentWait = this._computeRemainingWaitMinutes();
+        const currentTravel = Number(this.data.queue.etaMinutes || 0);
+        this.data.queue.estimationMinutes = currentWait + currentTravel;
 
         // ============================================
         // REFRESH ETA EVERY 3 POLLS (15 seconds)
@@ -365,28 +339,31 @@ function QStatusPage() {
         }
 
       } catch (e) {
-        console.error("❌ refreshQueueStatusFromServer error:", e);
+        console.error("❌ Refresh error:", e);
       }
     },
 
     // ============================================
     // WAIT TIME COUNTDOWN
     // ============================================
+    // Calculate remaining wait time based on elapsed time since countdown started.
+    // This is called every second by the countdown timer.
     
     _computeRemainingWaitMinutes() {
-      const serverWait = Number(this._serverWaitMinutes);
-      if (!Number.isFinite(serverWait) || serverWait <= 0) return 0;
+      const base = Number(this._baseWaitMinutes);
+      if (!Number.isFinite(base) || base <= 0) return 0;
 
-      const lastUpdate = Number(this._lastServerUpdate);
-      if (!Number.isFinite(lastUpdate) || lastUpdate <= 0) return Math.max(0, Math.ceil(serverWait));
+      const startTime = Number(this._countdownStartTime);
+      if (!Number.isFinite(startTime) || startTime <= 0) return Math.max(0, Math.ceil(base));
 
-      const elapsedMs = Math.max(0, Date.now() - lastUpdate);
+      const elapsedMs = Math.max(0, Date.now() - startTime);
       const elapsedMin = elapsedMs / 60000;
-      const remaining = serverWait - elapsedMin;
+      const remaining = base - elapsedMin;
 
       return Math.max(0, Math.floor(remaining));
     },
 
+    // Start countdown timer (updates UI every second)
     _startWaitCountdown() {
       if (this._countdownTimer) clearInterval(this._countdownTimer);
 
@@ -394,22 +371,24 @@ function QStatusPage() {
         const remaining = this._computeRemainingWaitMinutes();
         this.data.queue.waitMinutes = remaining;
 
-        // Update total estimation (wait + travel)
+        //  UPDATE ESTIMATION = wait + travel
+        //  "total_eta_minutes = remaining_wait_minutes + travel_minutes"
         const travel = Number(this.data.queue.etaMinutes || 0);
         this.data.queue.estimationMinutes = remaining + travel;
       }, 1000);
     },
 
     _stopWaitCountdown() {
-      if (this._countdownTimer) {
-        clearInterval(this._countdownTimer);
-        this._countdownTimer = null;
-      }
+      if (this._countdownTimer) clearInterval(this._countdownTimer);
+      this._countdownTimer = null;
     },
 
     // ============================================
     // ETA (TRAVEL TIME) CALCULATION
     // ============================================
+    // Calculate drive time from user's current location to business.
+    // Uses Google Distance Matrix API with real-time traffic data.
+    //  "travel_minutes = Google ETA (updates with traffic; no countdown)"
     
     async refreshEtaTravelOnly() {
       try {
@@ -418,16 +397,13 @@ function QStatusPage() {
         const destLng = Number(b?.longitude);
 
         if (!Number.isFinite(destLat) || !Number.isFinite(destLng)) {
-          console.warn("⚠️ Business coordinates missing");
           this.data.queue.etaMinutes = null;
           return;
         }
 
-        // Use cached location from home page
         const origin = this._userLocation;
 
         if (!origin || !Number.isFinite(origin.lat) || !Number.isFinite(origin.lng)) {
-          console.warn("⚠️ User location unavailable (home page didn't save it)");
           this.data.queue.etaMinutes = null;
           return;
         }
@@ -440,14 +416,14 @@ function QStatusPage() {
         
         this.data.queue.etaMinutes = eta;
         
-        console.log("✅ ETA calculated:", eta, "minutes");
+        console.log("✅ ETA:", eta, "min");
 
-        // Update total estimation
+        //  UPDATE ESTIMATION = wait + travel
         const wait = this._computeRemainingWaitMinutes();
         this.data.queue.estimationMinutes = wait + (eta || 0);
 
       } catch (e) {
-        console.error("❌ ETA calculation error:", e);
+        console.error("❌ ETA error:", e);
         this.data.queue.etaMinutes = null;
       }
     },
@@ -456,6 +432,7 @@ function QStatusPage() {
     // USER ACTIONS
     // ============================================
     
+    // Leave queue: marks ticket as "left" status
     async confirmLeave() {
       const queueId = this._getQueueId();
       const userId = this._getUserId();
@@ -482,12 +459,12 @@ function QStatusPage() {
             return;
           }
           
-          throw new Error(err?.error || "Failed to leave queue");
+          throw new Error(err?.error || "Failed to leave");
         }
 
       } catch (e) {
         console.error(e);
-        alert("تعذر مغادرة الطابور. حاول مرة أخرى.");
+        alert("تعذر مغادرة الطابور.");
         return;
       }
 
@@ -495,6 +472,8 @@ function QStatusPage() {
       window.location.href = "home_page.html";
     },
 
+    // Confirm service done: marks ticket as "done" status
+    // Only available when status = "called" (business called you)
     async confirmDone() {
       const queueId = this._getQueueId();
       const userId = this._getUserId();
@@ -535,7 +514,7 @@ function QStatusPage() {
 
       } catch (e) {
         console.error(e);
-        alert("تعذر تحديث حالتك إلى (تم). حاول مرة أخرى.");
+        alert("تعذر تحديث حالتك.");
         return;
       }
 

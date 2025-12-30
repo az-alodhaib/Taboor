@@ -1258,7 +1258,6 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
 
     if (!queue) return res.status(404).json({ error: 'Queue not found' });
 
-    // Get my ticket info
     const me = await getSQL(
       `SELECT * FROM queue_members
        WHERE queue_id = ? AND user_id = ?
@@ -1277,7 +1276,6 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     // POSITION CALCULATION
     // ============================================
     
-    // Count people AHEAD of me (earlier ticket_number, still active)
     const aheadRow = await getSQL(
       `SELECT COUNT(*) AS ahead
        FROM queue_members
@@ -1289,7 +1287,6 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     const peopleAhead = Number(aheadRow?.ahead || 0);
     const myPosition = peopleAhead + 1;
 
-    // Total people in line (including me)
     const totalRow = await getSQL(
       `SELECT COUNT(*) AS total
        FROM queue_members
@@ -1299,47 +1296,23 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     const totalInLine = Number(totalRow?.total || 0);
 
     // ============================================
-    //  WAIT TIME CALCULATION
+    // LINEAR BASELINE 
     // ============================================
     
-    let waitMinutesLinear = 0;
+    let linear_wait_minutes = 0;
     
     if (isActive) {
-      if (myPosition === 1 && peopleAhead === 0) {
-        // I'm first and alone → wait = 0
-        waitMinutesLinear = 0;
-      } else if (myPosition === 1 && peopleAhead > 0) {
-        // I'm first but there are people ahead (shouldn't happen, but safe)
-        waitMinutesLinear = peopleAhead * baseMinutes;
-      } else {
-        // I'm NOT first → count ONLY people who are WAITING (not called)
-        const waitingAheadRow = await getSQL(
-          `SELECT COUNT(*) AS waiting_ahead
-           FROM queue_members
-           WHERE queue_id = ? 
-             AND status = 'waiting'
-             AND ticket_number < ?`,
-          [queueId, me.ticket_number]
-        );
-        const waitingAhead = Number(waitingAheadRow?.waiting_ahead || 0);
-        
-        // Wait time = people WAITING ahead * service time
-        // (We DON'T count the person being served - they have 0 wait left)
-        waitMinutesLinear = waitingAhead * baseMinutes;
-      }
+      // Formula from PDF: people_ahead × service_duration
+      linear_wait_minutes = peopleAhead * baseMinutes;
     }
 
-    console.log("Wait calculation:", {
-      myPosition,
-      peopleAhead,
-      waitMinutesLinear
-    });
-
     // ============================================
-    // ML PREDICTION (same as before)
+    // MACHINE LEARNING PREDICTION 
     // ============================================
     
-    async function predictWaitMlMinutes() {
+    let ml_wait_minutes = null;
+    
+    if (isActive) {
       try {
         const arrivalDate = new Date();
         const arrival_hour = arrivalDate.getHours();
@@ -1347,6 +1320,7 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
         const st = String(queue.service_name || "").trim();
         const sd = String(queue.service_name || "unknown").trim();
 
+        // Calculate historical averages for ML features
         const serviceAvg = await getSQL(
           `SELECT AVG(service_duration) as avg_time
            FROM historical_data
@@ -1363,6 +1337,7 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
         );
         const hourly_avg_service_time = Number(hourlyAvg?.hourly_avg) || baseMinutes;
 
+        // ML payload
         const payload = {
           business_id: String(queue.business_id),
           arrival_hour: Number(arrival_hour),
@@ -1380,31 +1355,56 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
           body: JSON.stringify(payload)
         });
 
-        if (!r.ok) return null;
+        if (r.ok) {
+          const text = await r.text().catch(() => "");
+          let result = {};
+          try { result = JSON.parse(text); } catch { }
 
-        const text = await r.text().catch(() => "");
-        let result = {};
-        try { result = JSON.parse(text); } catch { return null; }
-
-        const predicted = Number(result.predicted_wait_minutes ?? result.predicted_wait ?? result.minutes);
-        if (!Number.isFinite(predicted)) return null;
-
-        return predicted;
+          const predicted = Number(result.predicted_wait_minutes ?? result.predicted_wait ?? result.minutes);
+          if (Number.isFinite(predicted) && predicted >= 0) {
+            ml_wait_minutes = predicted;
+          }
+        }
       } catch (e) {
-        console.error("ML predict (user-status) failed:", e);
-        return null;
+        console.error("ML prediction failed:", e);
+        // ml_wait_minutes stays null (will use linear fallback)
       }
     }
 
-    const ml_wait_minutes = isActive ? await predictWaitMlMinutes() : null;
+    // ============================================
+    // FINAL DECISION RULE 
+    // ============================================
+    
+    // "To avoid underestimation and keep user trust, 
+    // the displayed wait time is the safer value"
+    let final_wait_minutes = linear_wait_minutes;
+    
+    if (ml_wait_minutes !== null && Number.isFinite(ml_wait_minutes)) {
+      final_wait_minutes = Math.max(linear_wait_minutes, ml_wait_minutes);
+    }
 
+    console.log("🔢 Wait calculation:", {
+      myPosition,
+      peopleAhead,
+      baseMinutes,
+      linear_wait_minutes,
+      ml_wait_minutes,
+      final_wait_minutes,
+      rule: ml_wait_minutes !== null ? "max(linear, ml)" : "linear only"
+    });
+
+    // ============================================
+    // RESPONSE (send both for frontend to show label)
+    // ============================================
+    
     res.json({
       ticket_number: me.ticket_number,
       status: me.status,
       position: myPosition,
       people_ahead: peopleAhead,
-      wait_minutes: waitMinutesLinear,
-      wait_minutes_ml: ml_wait_minutes,
+      wait_minutes: linear_wait_minutes,        // Linear baseline
+      wait_minutes_ml: ml_wait_minutes,         // ML prediction (or null)
+      wait_minutes_final: final_wait_minutes,   // Final decision
       service_duration_minutes: baseMinutes,
       people_in_line: totalInLine,
       is_finished: !isActive,
@@ -1420,7 +1420,6 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     res.status(500).json({ error: 'Failed to get user status' });
   }
 });
-
 
 
 // STEP DATABASE
