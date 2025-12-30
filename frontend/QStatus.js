@@ -275,21 +275,38 @@ function QStatusPage() {
         });
 
         // ============================================
-        // SYNC COUNTDOWN ONLY IF ESTIMATE CHANGED
+        //  SYNC COUNTDOWN ONLY IF QUEUE CHANGED
         // ============================================
-        
-        const prevWait = Number(this._serverWaitMinutes);
-        const waitChanged = !Number.isFinite(prevWait) || Math.abs(prevWait - effectiveWait) >= 1;
-        
-        if (waitChanged) {
-          console.log("🔄 Server wait time changed:", prevWait, "→", effectiveWait);
-          this._serverWaitMinutes = effectiveWait;
-          this._lastServerUpdate = Date.now();
-        }
 
-        // Update UI with current countdown value
-        const remainingNow = this._computeRemainingWaitMinutes();
-        this.data.queue.waitMinutes = remainingNow;
+        // Check if my position in queue changed (someone left/skipped)
+        const prevPosition = this.data.queue.position;
+        const newPosition = Number(json.position || 0);
+        const positionChanged = prevPosition !== newPosition;
+
+        // Check if server estimate changed significantly
+        const prevWait = Number(this._serverWaitMinutes);
+        const estimateChanged = !Number.isFinite(prevWait) || Math.abs(prevWait - effectiveWait) >= 2;
+
+        // ONLY reset countdown if:
+        // 1. Position changed (someone ahead left/skipped)
+        // 2. OR server estimate changed by 2+ minutes
+        // 3. OR this is first poll (prevWait is null)
+        if (positionChanged || estimateChanged || !Number.isFinite(prevWait)) {
+          console.log("🔄 Queue changed - resetting countdown:", {
+            positionChanged,
+            estimateChanged,
+            prevPosition,
+            newPosition,
+            prevWait,
+            effectiveWait
+        });
+  
+         this._serverWaitMinutes = effectiveWait;
+           this._lastServerUpdate = Date.now();
+        } else {
+          // countdown running smoothly
+          console.log("✅ Queue unchanged - countdown continues");
+      }
 
         // ============================================
         // UPDATE OTHER FIELDS
