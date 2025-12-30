@@ -8,7 +8,7 @@ let gUserMarker = null;
 let gUserInfoWindow = null;
 
 // ============================================
-// LOCATION PERMISSION (ONCE ON LOAD)
+// LOCATION PERMISSION (ONCE ON PAGE LOAD)
 // ============================================
 
 async function requestLocationOnPageLoad() {
@@ -16,7 +16,7 @@ async function requestLocationOnPageLoad() {
   
   // Check if already asked
   if (localStorage.getItem(KEY) === "1") {
-    console.log("✅ Location already saved");
+    console.log("✅ Location already asked");
     return;
   }
 
@@ -25,15 +25,22 @@ async function requestLocationOnPageLoad() {
     "📍 سنحتاج إلى موقعك لحساب وقت الوصول (ETA) للمزود. هل توافق؟"
   );
 
+  // Mark as asked regardless of answer
+  localStorage.setItem(KEY, "1");
+
   if (!userConsent) {
     console.log("❌ User denied location");
-    localStorage.setItem(KEY, "1"); // Mark as asked
     return;
   }
 
   try {
     // Request browser location
     const position = await new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error("Geolocation not supported"));
+        return;
+      }
+
       navigator.geolocation.getCurrentPosition(resolve, reject, {
         enableHighAccuracy: true,
         timeout: 10000,
@@ -48,16 +55,14 @@ async function requestLocationOnPageLoad() {
 
     // Save to localStorage for QStatus
     localStorage.setItem("userLocation", JSON.stringify(loc));
-    localStorage.setItem(KEY, "1");
 
     console.log("✅ Location saved:", loc);
     
   } catch (error) {
     console.error("❌ Location error:", error);
-    localStorage.setItem(KEY, "1"); // Mark as asked even if failed
     alert("لم نتمكن من الحصول على موقعك. لن يتم عرض وقت الوصول (ETA).");
   }
-} 
+}
 // ==========================
 // Configurations
 // ==========================
@@ -290,13 +295,14 @@ function HomePage() {
 
     // Initialization
    async init() {
-  // Location was already requested on page load (see above)
+  // Location was already requested on page load 
   // Just check if it exists
   try {
     const raw = localStorage.getItem("userLocation");
     if (raw) {
       this.userLocation = JSON.parse(raw);
       this.locationEnabled = true;
+      console.log("✅ Location loaded in HomePage:", this.userLocation);
     }
   } catch (e) {
     this.userLocation = null;
@@ -305,7 +311,6 @@ function HomePage() {
 
   await this.loadBusinessTypes();
   await this.loadBusinesses();
-
   this.initMap();
   this.plotBusinessesOnMap();
 },

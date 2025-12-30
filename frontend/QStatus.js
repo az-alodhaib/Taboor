@@ -44,7 +44,8 @@ function QStatusPage() {
         waitLabel: "جاري التحميل...",
         status: "waiting",
         queueId: null,
-        memberId: null
+        memberId: null,
+        joinedAt: null
       }
     },
     
@@ -127,8 +128,17 @@ function QStatusPage() {
         // Ensure queue object exists
         this.data.queue = this.data.queue || {};
         
+        // 🔥 FIX: Calculate elapsed time since joining
+        const joinedAt = Number(this.data.queue.joinedAt || Date.now());
+        const elapsedMs = Math.max(0, Date.now() - joinedAt);
+        const elapsedMin = elapsedMs / 60000;
+        
+        // 🔥 FIX: Subtract elapsed time from original wait
+        const originalWait = Number(this.data.queue.waitMinutes || 0);
+        const currentWait = Math.max(0, Math.floor(originalWait - elapsedMin));
+        
         // Initialize all timing fields
-        this.data.queue.waitMinutes = Number(this.data.queue.waitMinutes || 0);
+        this.data.queue.waitMinutes = currentWait;
         this.data.queue.etaMinutes = this.data.queue.etaMinutes || null;
         this.data.queue.estimationMinutes = Number(this.data.queue.estimationMinutes || 0);
         this.data.queue.position = this.data.queue.position || null;
@@ -136,8 +146,17 @@ function QStatusPage() {
         this.data.queue.waitLabel = this.data.queue.waitLabel || "قياسي";
         this.data.queue.queueId = this.data.queue.queueId || null;
         this.data.queue.memberId = this.data.queue.memberId || null;
+        this.data.queue.joinedAt = joinedAt;
         
-        console.log("✅ Loaded queue data:", this.data.queue);
+        // 🔥 FIX: Set sync timestamp to NOW (not when originally joined)
+        this._waitServerBaseMinutes = currentWait;
+        this._waitSyncTimestamp = Date.now();
+        
+        console.log("✅ Loaded queue data:", {
+          originalWait,
+          elapsedMin: Math.floor(elapsedMin),
+          currentWait
+        });
         
       } catch (e) {
         console.error("❌ Failed to load queue data:", e);
