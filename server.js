@@ -408,6 +408,9 @@ function safeAddColumn(table, colDef) {
       await safeAddColumn("businesses", "email_verify_token TEXT");
       await safeAddColumn("businesses", "email_verify_expires INTEGER");
 
+      // Add service_id to queue_members so we know what service each customer selected
+      await safeAddColumn("queue_members", "service_id INTEGER");
+
       console.log("DB migration done");
     }   catch (e) {
       console.error("DB migration error:", e);
@@ -1226,9 +1229,9 @@ async function getNextTicketNumber(queue_id) {
 
 // STEP DATABASE
 // POST /queues/:queueId/join
-// Join queue. Required: user_id. Returns ticket_number + position.
+// Join queue. Required: user_id. Optional: service_id (which service customer selected).
 app.post('/queues/:queueId/join', async (req, res) => {
-  const { user_id, note } = req.body;
+  const { user_id, note, service_id } = req.body;
   const queueId = req.params.queueId;
   if (!user_id) return res.status(400).json({ error: 'user_id is required' });
 
@@ -1238,9 +1241,11 @@ app.post('/queues/:queueId/join', async (req, res) => {
     if (queue.status !== 'open') return res.status(400).json({ error: 'Queue is not open' });
 
     const ticket = await getNextTicketNumber(queueId);
+    
+    // Save service_id so we know what service this customer selected
     const ins = await runSQL(
-      `INSERT INTO queue_members (queue_id, user_id, ticket_number, note) VALUES (?, ?, ?, ?)`,
-      [queueId, user_id, ticket, note || null]
+      `INSERT INTO queue_members (queue_id, user_id, ticket_number, note, service_id) VALUES (?, ?, ?, ?, ?)`,
+      [queueId, user_id, ticket, note || null, service_id || null]
     );
     const me = await getSQL(`SELECT * FROM queue_members WHERE id = ?`, [ins.lastID]);
 
@@ -1340,15 +1345,15 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     const isActive = ["waiting", "called"].includes(me.status);
     
     // ============================================
-    // SERVICE DURATION CALCULATION
+    // SERVICE DURATION CALCULATION (ACCURATE)
     // ============================================
-    // Problem: Queue has one service_id, but customers may select different services.
-    // Solution: Use AVERAGE duration of all active services for this business.
-    // This gives a more accurate estimate when customers choose different services.
+    // Calculate wait time based on ACTUAL services selected by people ahead.
+    // Each queue_member now has service_id, so we can sum their service durations.
     
+    // Default fallback (used if no service data available)
     let baseMinutes = Number(queue.service_duration_minutes || 10);
     
-    // Try to get average service duration for this business
+    // Get average for fallback (when people ahead don't have service_id)
     const avgServiceDuration = await getSQL(
       `SELECT AVG(duration_minutes) as avg_duration
        FROM services
@@ -1358,9 +1363,6 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     
     if (avgServiceDuration?.avg_duration) {
       baseMinutes = Math.round(Number(avgServiceDuration.avg_duration));
-      console.log("📊 Using average service duration:", baseMinutes, "min (from all services)");
-    } else {
-      console.log("📊 Using queue service duration:", baseMinutes, "min (single service)");
     }
 
     // ============================================
@@ -1387,15 +1389,35 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     const totalInLine = Number(totalRow?.total || 0);
 
     // ============================================
-    // LINEAR BASELINE 
+    // LINEAR BASELINE (ACCURATE - based on actual services)
     // ============================================
-    // Formula from PDF: people_ahead × service_duration
-    // IMPORTANT: Position 1 (peopleAhead = 0) → ALWAYS 0 wait time
+    // Sum the service durations of all people AHEAD of me.
+    // This is more accurate than average × count.
     
     let linear_wait_minutes = 0;
     
     if (isActive && peopleAhead > 0) {
-      linear_wait_minutes = peopleAhead * baseMinutes;
+      // Get SUM of service durations for people ahead
+      const sumAhead = await getSQL(
+        `SELECT 
+           SUM(COALESCE(s.duration_minutes, ?)) as total_duration,
+           COUNT(*) as count_with_service
+         FROM queue_members qm
+         LEFT JOIN services s ON s.id = qm.service_id
+         WHERE qm.queue_id = ? 
+           AND qm.status IN ('waiting','called')
+           AND qm.ticket_number < ?`,
+        [baseMinutes, queueId, me.ticket_number]
+      );
+      
+      if (sumAhead?.total_duration) {
+        linear_wait_minutes = Math.round(Number(sumAhead.total_duration));
+        console.log("📊 Wait time based on ACTUAL services ahead:", linear_wait_minutes, "min");
+      } else {
+        // Fallback to average × count
+        linear_wait_minutes = peopleAhead * baseMinutes;
+        console.log("📊 Wait time using average (no service data):", linear_wait_minutes, "min");
+      }
     }
 
     // ============================================
@@ -1650,22 +1672,50 @@ app.get('/queues/:queueId/overview', async (req, res) => {
       [queueId]
     );
 
-    // ETA: waiting count * service duration (or 10 if no service)
-    const baseMinutes = queue.service_id
-      ? (await getSQL(`SELECT duration_minutes FROM services WHERE id = ?`, [queue.service_id]))?.duration_minutes || 10
-      : 10;
+    // Get average service duration for fallback
+    const avgServiceDuration = await getSQL(
+      `SELECT AVG(duration_minutes) as avg_duration
+       FROM services
+       WHERE business_id = ? AND is_active = 1`,
+      [queue.business_id]
+    );
+    const baseMinutes = Math.round(Number(avgServiceDuration?.avg_duration)) || 
+      (queue.service_id
+        ? (await getSQL(`SELECT duration_minutes FROM services WHERE id = ?`, [queue.service_id]))?.duration_minutes || 10
+        : 10);
 
-        // self-note: "wait time" = time until a NEW customer starts service.
-    // self-note: include 'called' because the current serving customer still blocks the queue.
-    // self-note: later: replace this with SUM of each member's selected service duration (needs storing service per member).
     const waitingCount = Number(stats?.waiting || 0);
     const calledCount  = Number(stats?.called  || 0);
     const peopleInLine = waitingCount + calledCount;
 
+    // Calculate wait time based on ACTUAL services selected by people in queue
+    // This matches the calculation in /user-status endpoint
+    let estimated_wait_minutes = 0;
+    
+    if (peopleInLine > 0) {
+      const sumServices = await getSQL(
+        `SELECT 
+           SUM(COALESCE(s.duration_minutes, ?)) as total_duration
+         FROM queue_members qm
+         LEFT JOIN services s ON s.id = qm.service_id
+         WHERE qm.queue_id = ? 
+           AND qm.status IN ('waiting','called')`,
+        [baseMinutes, queueId]
+      );
+      
+      if (sumServices?.total_duration) {
+        estimated_wait_minutes = Math.round(Number(sumServices.total_duration));
+      } else {
+        // Fallback to average × count
+        estimated_wait_minutes = peopleInLine * baseMinutes;
+      }
+    }
+
     res.json({
       queue,
       stats,
-      estimated_wait_minutes: peopleInLine * baseMinutes
+      estimated_wait_minutes,
+      base_service_minutes: baseMinutes  // For debugging
     });
 
   } catch {
