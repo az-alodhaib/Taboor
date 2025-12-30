@@ -1,102 +1,148 @@
 const API_BASE = window.location.origin;
 
+// ============================================
+// ETA HELPER (Backend call only)
+// ============================================
 
 async function getTrafficEtaMinutes(origin, destination) {
-  const res = await fetch(`${API_BASE}/eta`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ origin, destination })
-  });
+  try {
+    const res = await fetch(`${API_BASE}/eta`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ origin, destination })
+    });
 
-  const json = await res.json();
-  if (!res.ok) throw new Error(json.error || "ETA failed");
+    const json = await res.json();
+    if (!res.ok) throw new Error(json.error || "ETA failed");
 
-  const sec = json.durationInTrafficSeconds ?? json.durationSeconds ?? null;
-  if (sec == null) return null;
+    const sec = json.durationInTrafficSeconds ?? json.durationSeconds ?? null;
+    if (sec == null) return null;
 
-  return Math.max(1, Math.round(sec / 60));
+    return Math.max(1, Math.round(sec / 60));
+  } catch (e) {
+    console.error("ETA API error:", e);
+    return null;
+  }
 }
 
-function getBrowserLocation() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      console.log("ETA debug: geolocation not supported");
-      return resolve(null);
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      (err) => {
-        // self-note: show why location failed (permission/timeout/etc)
-        console.log("ETA debug: geolocation error", {
-          code: err?.code,
-          message: err?.message
-        });
-        resolve(null);
-      },
-      { enableHighAccuracy: true, timeout: 20000, maximumAge: 60000 }
-    );
-  });
-}
-
-
+// ============================================
+// MAIN ALPINE COMPONENT
+// ============================================
 
 function QStatusPage() {
   return {
     data: {
-      business: { name: "", address: "" },
+      business: { name: "", address: "", latitude: null, longitude: null },
       services: [],
       totals: { totalWithTax: "0.00" },
-      queue: { position: 1, totalPeople: 0, estMinutes: 0 }
-    },
-    dots: "",
-    // self-note: UI-only wait countdown synced from server
-    _waitServerBaseMinutes: null,
-    _waitSyncTs: null,
-    _waitCountdownTimer: null,
-    _notifiedNext: false,
-
-    init() {
-  try {
-    const raw = localStorage.getItem("queueStatus");
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed) {
-        this.data = parsed;
-        this.data.queue = this.data.queue || {};
-
-        // self-note: backward compatibility (old payload only had estMinutes)
-        const legacy = Number(this.data.queue.estMinutes || 0);
-
-        this.data.queue.waitMinutes = Number(this.data.queue.waitMinutes ?? legacy);
-        this.data.queue.submissionMinutes = Number(this.data.queue.submissionMinutes || 0);
-        this.data.queue.travelMinutes = Number(this.data.queue.travelMinutes || 0);
-        this.data.queue.estimationMinutes = Number(
-          this.data.queue.estimationMinutes ??
-          (this.data.queue.waitMinutes + this.data.queue.travelMinutes)
-        );
-
-        // self-note: keep estMinutes synced so UI doesn't break anywhere else
-        this.data.queue.estMinutes = this.data.queue.waitMinutes;
-        // calculate ETA (travel time only)
-        this.refreshEtaTravelOnly();
-
+      queue: { 
+        position: null, 
+        totalPeople: 0, 
+        waitMinutes: 0,
+        etaMinutes: null,
+        estimationMinutes: null,
+        waitLabel: "جاري التحميل...",
+        status: "waiting",
+        queueId: null,
+        memberId: null
       }
-      // self-note: keep schema stable
-      this.data.queue.joinedAt = Number(this.data.queue.joinedAt || Date.now());
+    },
+    
+    dots: "",
+    
+    // Wait time countdown state
+    _waitServerBaseMinutes: null,
+    _waitSyncTimestamp: null,
+    _waitCountdownTimer: null,
+    
+    // Polling state
+    _pollTimer: null,
+    _etaPollCounter: 0,
+    _notifiedNext: false,
+    
+    // User location (from home page)
+    _userLocation: null,
 
-    }
-  } catch (e) {}
+    // ============================================
+    // INIT - Load data and start systems
+    // ============================================
+    
+    init() {
+      console.log("🚀 QStatus page initializing...");
+      
+      // Load saved queue data
+      this.loadQueueDataFromStorage();
+      
+      // Get user location FROM localStorage (home page already asked)
+      this._loadUserLocationFromStorage();
+      
+      // Start polling queue status
+      this.startAutoRefresh();
+      
+      // Start wait time countdown
+      this._startWaitCountdown();
+      
+      // Animate dots
+      this._animateDots();
+      
+      console.log("✅ QStatus page ready");
+    },
 
-  // self-note: start polling immediately (even if I'm next)
-  this.startAutoRefresh();
+    // ============================================
+    // LOAD USER LOCATION (from home page)
+    // ============================================
+    
+    _loadUserLocationFromStorage() {
+      try {
+        const raw = localStorage.getItem("userLocation");
+        if (raw) {
+          this._userLocation = JSON.parse(raw);
+          console.log("✅ User location loaded from storage:", this._userLocation);
+        }
+      } catch (e) {
+        console.warn("⚠️ Failed to load user location:", e);
+      }
+    },
 
-  // self-note: keep UI wait time counting down locally (server returns a fixed estimate)
-  this._startWaitCountdown();
-  this._animateDots();
-  
-  },
+    // ============================================
+    // LOAD SAVED DATA
+    // ============================================
+    
+    loadQueueDataFromStorage() {
+      try {
+        const raw = localStorage.getItem("queueStatus");
+        if (!raw) {
+          console.warn("⚠️ No queue data in localStorage");
+          return;
+        }
+        
+        const parsed = JSON.parse(raw);
+        this.data = parsed;
+        
+        // Ensure queue object exists
+        this.data.queue = this.data.queue || {};
+        
+        // Initialize all timing fields
+        this.data.queue.waitMinutes = Number(this.data.queue.waitMinutes || 0);
+        this.data.queue.etaMinutes = this.data.queue.etaMinutes || null;
+        this.data.queue.estimationMinutes = Number(this.data.queue.estimationMinutes || 0);
+        this.data.queue.position = this.data.queue.position || null;
+        this.data.queue.status = this.data.queue.status || "waiting";
+        this.data.queue.waitLabel = this.data.queue.waitLabel || "قياسي";
+        this.data.queue.queueId = this.data.queue.queueId || null;
+        this.data.queue.memberId = this.data.queue.memberId || null;
+        
+        console.log("✅ Loaded queue data:", this.data.queue);
+        
+      } catch (e) {
+        console.error("❌ Failed to load queue data:", e);
+      }
+    },
 
+    // ============================================
+    // HELPERS
+    // ============================================
+    
     _animateDots() {
       let i = 0;
       setInterval(() => {
@@ -106,7 +152,6 @@ function QStatusPage() {
     },
 
     _getUserId() {
-      // self-note: support multiple storage keys to avoid breaking older login pages
       const direct = localStorage.getItem("userId") || localStorage.getItem("user_id");
       if (direct) return Number(direct);
 
@@ -122,209 +167,262 @@ function QStatusPage() {
     },
 
     _getQueueId() {
-      // self-note: queueId must be stored in payload, otherwise backend calls can't work
       const qid = this.data?.queue?.queueId ?? null;
       return qid != null ? String(qid) : null;
     },
-    _pollTimer: null,
 
-startAutoRefresh() {
-  // self-note: refresh queue status frequently; ETA less frequently
-  if (this._pollTimer) clearInterval(this._pollTimer);
-
-  this._pollTimer = setInterval(() => {
-    this.refreshQueueStatusFromServer();
-  }, 5000); // every 5 seconds
-
-  // run immediately
-  this.refreshQueueStatusFromServer();
-},
-
-stopAutoRefresh() {
-  if (this._pollTimer) clearInterval(this._pollTimer);
-  this._pollTimer = null;
-},
-
-async refreshQueueStatusFromServer() {
-  try {
-    const queueId = this._getQueueId();
-    const userId = this._getUserId();
-    if (!queueId || !userId) return;
-
-    const res = await fetch(`${API_BASE}/queues/${queueId}/user-status?user_id=${encodeURIComponent(userId)}`);
-    const json = await res.json().catch(() => ({}));
-
-    // if request failed, handle carefully (don't silently kill the UI)
-  if (!res.ok) {
-  // self-note: 404 usually means no active ticket (user already left / queue reset)
-  if (res.status === 404) {
-    this.stopAutoRefresh();
-    localStorage.removeItem("queueStatus");
-    window.location.href = "home_page.html";
-    return;
-  }
-
-  // self-note: temporary/server errors should NOT stop polling
-  console.warn("refreshQueueStatusFromServer failed:", json);
-  return;
-}
-
-
-    this.data.queue = this.data.queue || {};
-
-    // update live values
-    this.data.queue.status = json.status ?? this.data.queue.status ?? "waiting";
-
-      // self-note: prefer ML wait if available, fallback to linear wait
-      const mlWait = Number(json.wait_minutes_ml);
-      const linearWait = Number(json.wait_minutes);
-
-      const effectiveWait =
-       Number.isFinite(mlWait) && mlWait >= 0 ? mlWait :
-      (Number.isFinite(linearWait) && linearWait >= 0 ? linearWait : 0);
-
-       this.data.queue.waitLabel =
-        Number.isFinite(mlWait) && mlWait >= 0 ? "تقدير ذكي" : "تقدير قياسي";
-
-
-    // self-note: position might be null if ticket finished
-    this.data.queue.position = json.position != null ? Number(json.position) : null;
-
-    // self-note: only reset countdown when server estimate actually changes
-    const prevBase = Number(this._waitServerBaseMinutes);
-    if (!Number.isFinite(prevBase) || Math.abs(prevBase - effectiveWait) >= 1) {
-      this._waitServerBaseMinutes = effectiveWait;
-      this._waitSyncTs = Date.now();
-    }
-
-    const remainingNow = this._computeRemainingWaitMinutes();
-    this.data.queue.waitMinutes = remainingNow;
-    this.data.queue.estMinutes = remainingNow; // backward compatibility
-    this.data.queue.totalPeople = Number(json.people_in_line ?? this.data.queue.totalPeople ?? 0);
-
-
-    // keep business coords synced (ETA needs it)
-    if (json.business) {
-      this.data.business = this.data.business || {};
-      this.data.business.name = json.business.name ?? this.data.business.name;
-      this.data.business.latitude = json.business.latitude ?? this.data.business.latitude;
-      this.data.business.longitude = json.business.longitude ?? this.data.business.longitude;
-    }
-
-    // self-note: notify when user becomes next in line
-    if (this.data.queue.position === 1 && !this._notifiedNext) {
-      this._notifiedNext = true;
-      this._notifyServiceReady("You are next. Please get ready.");
-    }
-
-    // self-note: if backend says ticket finished, show it clearly
-  if (json.is_finished) {
-    this.stopAutoRefresh();
-    this._stopWaitCountdown();
-
-    const st = String(json.status || "").toLowerCase();
-
-    if (st === "done") {
-      alert("✅ تم إكمال خدمتك بنجاح");
-    } else if (st === "left") {
-      alert("ℹ️ تم إنهاء تذكرتك (تم الخروج من الطابور).");
-    } else if (st === "skipped") {
-      alert("ℹ️ تم تخطي تذكرتك.");
-    }
-
-  localStorage.removeItem("queueStatus");
-  window.location.href = "home_page.html";
-  return;
-}
+    // ============================================
+    // AUTO-REFRESH POLLING
+    // ============================================
     
-    // self-note: refresh ETA sometimes (every 3 polls)
-    this._etaPollCounter = (this._etaPollCounter || 0) + 1;
-      if (this._etaPollCounter % 3 === 1) {
-        if (typeof this.refreshEtaTravelOnly === "function") {
-          this.refreshEtaTravelOnly();
-          }
+    startAutoRefresh() {
+      if (this._pollTimer) clearInterval(this._pollTimer);
+
+      // Poll every 5 seconds
+      this._pollTimer = setInterval(() => {
+        this.refreshQueueStatusFromServer();
+      }, 5000);
+
+      // Run immediately
+      this.refreshQueueStatusFromServer();
+    },
+
+    stopAutoRefresh() {
+      if (this._pollTimer) {
+        clearInterval(this._pollTimer);
+        this._pollTimer = null;
       }
+    },
 
-  } catch (e) {
-    console.error(e);
-  }
-},
+    // ============================================
+    // REFRESH QUEUE STATUS (MAIN LOGIC)
+    // ============================================
+    
+    async refreshQueueStatusFromServer() {
+      try {
+        const queueId = this._getQueueId();
+        const userId = this._getUserId();
+        
+        if (!queueId || !userId) {
+          console.warn("⚠️ Missing queueId or userId");
+          return;
+        }
 
-_computeRemainingWaitMinutes() {
-  const base = Number(this._waitServerBaseMinutes);
-  if (!Number.isFinite(base) || base <= 0) return 0;
+        const res = await fetch(
+          `${API_BASE}/queues/${queueId}/user-status?user_id=${encodeURIComponent(userId)}`
+        );
+        
+        const json = await res.json().catch(() => ({}));
 
-  const syncTs = Number(this._waitSyncTs);
-  if (!Number.isFinite(syncTs) || syncTs <= 0) return Math.max(0, Math.round(base));
+        // Handle errors
+        if (!res.ok) {
+          if (res.status === 404) {
+            console.warn("❌ Ticket not found (user left or queue reset)");
+            this.stopAutoRefresh();
+            localStorage.removeItem("queueStatus");
+            window.location.href = "home_page.html";
+            return;
+          }
+          
+          console.warn("⚠️ Server error:", res.status, json);
+          return;
+        }
 
-  const elapsedMs = Math.max(0, Date.now() - syncTs);
-  const elapsedMin = elapsedMs / 60000;
-  const remaining = base - elapsedMin;
+        console.log("📥 Server response:", json);
 
-  // self-note: use floor so it actually decreases as time passes
-  return Math.max(0, Math.floor(remaining));
-},
+        // ============================================
+        // UPDATE WAIT TIME (ML vs LINEAR LOGIC)
+        // ============================================
+        
+        const mlWait = Number(json.wait_minutes_ml);
+        const linearWait = Number(json.wait_minutes);
+        
+        // Use ML if available and valid, otherwise linear
+        const effectiveWait = 
+          (Number.isFinite(mlWait) && mlWait >= 0) ? mlWait : 
+          (Number.isFinite(linearWait) && linearWait >= 0) ? linearWait : 
+          0;
+        
+        // Set label based on source
+        this.data.queue.waitLabel = 
+          (Number.isFinite(mlWait) && mlWait >= 0) ? "تقدير ذكي" : "تقدير قياسي";
 
-_startWaitCountdown() {
-  if (this._waitCountdownTimer) clearInterval(this._waitCountdownTimer);
+        console.log("⏱️ Wait calculation:", {
+          ml: mlWait,
+          linear: linearWait,
+          effective: effectiveWait,
+          label: this.data.queue.waitLabel
+        });
 
-  this._waitCountdownTimer = setInterval(() => {
-    const remaining = this._computeRemainingWaitMinutes();
+        // ============================================
+        // SYNC COUNTDOWN ONLY IF ESTIMATE CHANGED
+        // ============================================
+        
+        const prevBase = Number(this._waitServerBaseMinutes);
+        const estimateChanged = !Number.isFinite(prevBase) || Math.abs(prevBase - effectiveWait) >= 1;
+        
+        if (estimateChanged) {
+          console.log("🔄 Wait estimate changed:", prevBase, "→", effectiveWait);
+          this._waitServerBaseMinutes = effectiveWait;
+          this._waitSyncTimestamp = Date.now();
+        }
 
-    this.data.queue = this.data.queue || {};
-    this.data.queue.waitMinutes = remaining;
-    this.data.queue.estMinutes = remaining;
+        // Update UI with current countdown value
+        const remainingNow = this._computeRemainingWaitMinutes();
+        this.data.queue.waitMinutes = remainingNow;
 
-    const travelNow = Number(this.data.queue.etaMinutes ?? this.data.queue.travelMinutes ?? 0);
-    this.data.queue.estimationMinutes = Number(remaining) + (Number.isFinite(travelNow) ? travelNow : 0);
-  }, 1000);
-},
+        // ============================================
+        // UPDATE OTHER FIELDS
+        // ============================================
+        
+        this.data.queue.position = json.position != null ? Number(json.position) : null;
+        this.data.queue.totalPeople = Number(json.people_in_line || 0);
+        this.data.queue.status = json.status || "waiting";
 
-_stopWaitCountdown() {
-  if (this._waitCountdownTimer) clearInterval(this._waitCountdownTimer);
-  this._waitCountdownTimer = null;
-},
+        // Update business data (needed for ETA)
+        if (json.business) {
+          this.data.business.name = json.business.name || this.data.business.name;
+          this.data.business.latitude = json.business.latitude || this.data.business.latitude;
+          this.data.business.longitude = json.business.longitude || this.data.business.longitude;
+        }
 
+        // ============================================
+        // NOTIFICATION: YOU ARE NEXT
+        // ============================================
+        
+        if (this.data.queue.position === 1 && !this._notifiedNext) {
+          this._notifiedNext = true;
+          alert("🔔 أنت التالي في الطابور! يرجى الاستعداد.");
+        }
+
+        // ============================================
+        // CHECK IF TICKET FINISHED
+        // ============================================
+        
+        if (json.is_finished) {
+          this.stopAutoRefresh();
+          this._stopWaitCountdown();
+          
+          const status = String(json.status || "").toLowerCase();
+          
+          if (status === "done") {
+            alert("✅ تم إكمال خدمتك بنجاح");
+          } else if (status === "left") {
+            alert("ℹ️ تم إنهاء تذكرتك (تم الخروج من الطابور).");
+          } else if (status === "skipped") {
+            alert("ℹ️ تم تخطي تذكرتك.");
+          }
+          
+          localStorage.removeItem("queueStatus");
+          window.location.href = "home_page.html";
+          return;
+        }
+
+        // ============================================
+        // REFRESH ETA EVERY 3 POLLS (15 seconds)
+        // ============================================
+        
+        this._etaPollCounter++;
+        if (this._etaPollCounter % 3 === 1) {
+          this.refreshEtaTravelOnly();
+        }
+
+      } catch (e) {
+        console.error("❌ refreshQueueStatusFromServer error:", e);
+      }
+    },
+
+    // ============================================
+    // WAIT TIME COUNTDOWN
+    // ============================================
+    
+    _computeRemainingWaitMinutes() {
+      const base = Number(this._waitServerBaseMinutes);
+      if (!Number.isFinite(base) || base <= 0) return 0;
+
+      const syncTs = Number(this._waitSyncTimestamp);
+      if (!Number.isFinite(syncTs) || syncTs <= 0) return Math.max(0, Math.ceil(base));
+
+      const elapsedMs = Math.max(0, Date.now() - syncTs);
+      const elapsedMin = elapsedMs / 60000;
+      const remaining = base - elapsedMin;
+
+      return Math.max(0, Math.floor(remaining));
+    },
+
+    _startWaitCountdown() {
+      if (this._waitCountdownTimer) clearInterval(this._waitCountdownTimer);
+
+      this._waitCountdownTimer = setInterval(() => {
+        const remaining = this._computeRemainingWaitMinutes();
+        this.data.queue.waitMinutes = remaining;
+
+        // Update total estimation (wait + travel)
+        const travel = Number(this.data.queue.etaMinutes || 0);
+        this.data.queue.estimationMinutes = remaining + travel;
+      }, 1000);
+    },
+
+    _stopWaitCountdown() {
+      if (this._waitCountdownTimer) {
+        clearInterval(this._waitCountdownTimer);
+        this._waitCountdownTimer = null;
+      }
+    },
+
+    // ============================================
+    // ETA (TRAVEL TIME) CALCULATION
+    // ============================================
+    
     async refreshEtaTravelOnly() {
-  try {
-    const b = this.data?.business;
-    const destLat = Number(b?.latitude);
-    const destLng = Number(b?.longitude);
+      try {
+        const b = this.data?.business;
+        const destLat = Number(b?.latitude);
+        const destLng = Number(b?.longitude);
 
-    if (!Number.isFinite(destLat) || !Number.isFinite(destLng)) {
-      console.log("ETA debug: missing business coords", b);
-      this.data.queue.etaMinutes = null;
-      return;
-    }
+        if (!Number.isFinite(destLat) || !Number.isFinite(destLng)) {
+          console.warn("⚠️ Business coordinates missing");
+          this.data.queue.etaMinutes = null;
+          return;
+        }
 
-    const origin = await getBrowserLocation();
-    if (!origin) {
-  console.log("ETA debug: missing user location");
+        // Use cached location from home page
+        const origin = this._userLocation;
 
-  // self-note: fallback to saved travelMinutes (approx) if available
-  const fallback = Number(this.data?.queue?.travelMinutes ?? 0);
-  this.data.queue.etaMinutes = fallback > 0 ? fallback : null;
+        if (!origin || !origin.lat || !origin.lng) {
+          console.warn("⚠️ User location unavailable (home page didn't save it)");
+          this.data.queue.etaMinutes = null;
+          return;
+        }
 
-  return;
-}
+        const destination = { lat: destLat, lng: destLng };
+        
+        console.log("🚗 Calculating ETA:", { origin, destination });
+        
+        const eta = await getTrafficEtaMinutes(origin, destination);
+        
+        this.data.queue.etaMinutes = eta;
+        
+        console.log("✅ ETA calculated:", eta, "minutes");
 
-    const destination = { lat: destLat, lng: destLng };
+        // Update total estimation
+        const wait = this._computeRemainingWaitMinutes();
+        this.data.queue.estimationMinutes = wait + (eta || 0);
 
-    console.log("ETA debug: calling /eta", { origin, destination });
+      } catch (e) {
+        console.error("❌ ETA calculation error:", e);
+        this.data.queue.etaMinutes = null;
+      }
+    },
 
-    const eta = await getTrafficEtaMinutes(origin, destination);
-    this.data.queue.etaMinutes = eta;
-  } catch (e) {
-    console.error("ETA debug error:", e);
-    this.data.queue.etaMinutes = null;
-  }
-},
-
+    // ============================================
+    // USER ACTIONS
+    // ============================================
+    
     async confirmLeave() {
       const queueId = this._getQueueId();
       const userId = this._getUserId();
 
-      // self-note: fallback to old behavior if IDs are missing
       if (!queueId || !userId) {
         localStorage.removeItem("queueStatus");
         window.location.href = "home_page.html";
@@ -339,17 +437,16 @@ _stopWaitCountdown() {
         });
 
         if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-
-      // self-note: if backend says I'm not in queue anymore, just treat as success
-      if (res.status === 404 && String(err?.error || "").includes("No active ticket")) {
-       localStorage.removeItem("queueStatus");
-       window.location.href = "home_page.html";
-       return;
-      }
-
-  throw new Error(err?.error || "Failed to leave queue");
-}
+          const err = await res.json().catch(() => ({}));
+          
+          if (res.status === 404) {
+            localStorage.removeItem("queueStatus");
+            window.location.href = "home_page.html";
+            return;
+          }
+          
+          throw new Error(err?.error || "Failed to leave queue");
+        }
 
       } catch (e) {
         console.error(e);
@@ -365,7 +462,6 @@ _stopWaitCountdown() {
       const queueId = this._getQueueId();
       const userId = this._getUserId();
 
-      // self-note: fallback to old behavior if IDs are missing
       if (!queueId || !userId) {
         alert("تم إكمال خدمتك بنجاح 🎉");
         localStorage.removeItem("queueStatus");
@@ -374,32 +470,32 @@ _stopWaitCountdown() {
       }
 
       try {
-        // self-note: ask backend for my active member_id, then mark it done
-        const memberId = this.data?.queue?.memberId;
+        let memberId = this.data?.queue?.memberId;
 
-        let idToPatch = memberId;
+        if (!memberId) {
+          const posRes = await fetch(
+            `${API_BASE}/queues/${queueId}/position?user_id=${encodeURIComponent(userId)}`
+          );
+          
+          if (!posRes.ok) throw new Error("Failed to get position");
 
-      if (!idToPatch) {
-      const posRes = await fetch(`${API_BASE}/queues/${queueId}/position?user_id=${encodeURIComponent(userId)}`);
-      if (!posRes.ok) throw new Error("Failed to get my position");
+          const posData = await posRes.json();
+          if (!posData?.member_id) throw new Error("No active ticket");
 
-      const posData = await posRes.json();
-      if (!posData?.member_id) throw new Error("No active ticket found");
+          memberId = posData.member_id;
+        }
 
-     idToPatch = posData.member_id;
-      }
-
-      const patchRes = await fetch(`${API_BASE}/queue_members/${idToPatch}/status`, {
-       method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "done" })
-      });
-
+        const patchRes = await fetch(`${API_BASE}/queue_members/${memberId}/status`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "done" })
+        });
 
         if (!patchRes.ok) {
           const err = await patchRes.json().catch(() => ({}));
           throw new Error(err?.error || "Failed to mark done");
         }
+
       } catch (e) {
         console.error(e);
         alert("تعذر تحديث حالتك إلى (تم). حاول مرة أخرى.");

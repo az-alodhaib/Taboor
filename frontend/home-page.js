@@ -245,6 +245,9 @@ function HomePage() {
     if (loc) {
       this.userLocation = loc;
       this.locationEnabled = true;
+      // SAVE TO LOCALSTORAGE FOR QSTATUS PAGE
+      localStorage.setItem("userLocation", JSON.stringify(loc));
+      console.log("✅ User location saved to localStorage:", loc);
     }
   } catch (e) {
     this.userLocation = null;
