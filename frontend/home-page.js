@@ -7,7 +7,57 @@ let gHomeMapInitialized = false;
 let gUserMarker = null;
 let gUserInfoWindow = null;
 
+// ============================================
+// LOCATION PERMISSION (ONCE ON LOAD)
+// ============================================
 
+async function requestLocationOnPageLoad() {
+  const KEY = "taboor_location_asked_v1";
+  
+  // Check if already asked
+  if (localStorage.getItem(KEY) === "1") {
+    console.log("✅ Location already saved");
+    return;
+  }
+
+  // Show Arabic confirmation dialog
+  const userConsent = confirm(
+    "📍 سنحتاج إلى موقعك لحساب وقت الوصول (ETA) للمزود. هل توافق؟"
+  );
+
+  if (!userConsent) {
+    console.log("❌ User denied location");
+    localStorage.setItem(KEY, "1"); // Mark as asked
+    return;
+  }
+
+  try {
+    // Request browser location
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 30000
+      });
+    });
+
+    const loc = {
+      lat: position.coords.latitude,
+      lng: position.coords.longitude
+    };
+
+    // Save to localStorage for QStatus
+    localStorage.setItem("userLocation", JSON.stringify(loc));
+    localStorage.setItem(KEY, "1");
+
+    console.log("✅ Location saved:", loc);
+    
+  } catch (error) {
+    console.error("❌ Location error:", error);
+    localStorage.setItem(KEY, "1"); // Mark as asked even if failed
+    alert("لم نتمكن من الحصول على موقعك. لن يتم عرض وقت الوصول (ETA).");
+  }
+} 
 // ==========================
 // Configurations
 // ==========================
@@ -16,6 +66,7 @@ const API_BASE = window.location.origin;
 // self-note: logout button (customer)
 // self-note: logout button (customer) - same pattern as business dashboard
 document.addEventListener("DOMContentLoaded", () => {
+  requestLocationOnPageLoad();
   const logoutBtn = document.getElementById("logout-btn");
   if (!logoutBtn) return;
 
@@ -239,15 +290,13 @@ function HomePage() {
 
     // Initialization
    async init() {
+  // Location was already requested on page load (see above)
+  // Just check if it exists
   try {
-    // self-note: ask user permission for location to compute ETA (travel time)
-    const loc = await requestLocationWithDisclosure();
-    if (loc) {
-      this.userLocation = loc;
+    const raw = localStorage.getItem("userLocation");
+    if (raw) {
+      this.userLocation = JSON.parse(raw);
       this.locationEnabled = true;
-      // SAVE TO LOCALSTORAGE FOR QSTATUS PAGE
-      localStorage.setItem("userLocation", JSON.stringify(loc));
-      console.log("✅ User location saved to localStorage:", loc);
     }
   } catch (e) {
     this.userLocation = null;

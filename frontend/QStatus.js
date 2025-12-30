@@ -20,7 +20,7 @@ async function getTrafficEtaMinutes(origin, destination) {
 
     return Math.max(1, Math.round(sec / 60));
   } catch (e) {
-    console.error("ETA API error:", e);
+    console.error("❌ ETA API error:", e);
     return null;
   }
 }
@@ -85,6 +85,9 @@ function QStatusPage() {
       // Animate dots
       this._animateDots();
       
+      // Calculate ETA immediately
+      this.refreshEtaTravelOnly();
+      
       console.log("✅ QStatus page ready");
     },
 
@@ -97,7 +100,9 @@ function QStatusPage() {
         const raw = localStorage.getItem("userLocation");
         if (raw) {
           this._userLocation = JSON.parse(raw);
-          console.log("✅ User location loaded from storage:", this._userLocation);
+          console.log("✅ User location loaded:", this._userLocation);
+        } else {
+          console.warn("⚠️ No user location in localStorage");
         }
       } catch (e) {
         console.warn("⚠️ Failed to load user location:", e);
@@ -290,7 +295,7 @@ function QStatusPage() {
         // NOTIFICATION: YOU ARE NEXT
         // ============================================
         
-        if (this.data.queue.position === 1 && !this._notifiedNext) {
+        if (this.data.queue.position === 1 && this.data.queue.status === "called" && !this._notifiedNext) {
           this._notifiedNext = true;
           alert("🔔 أنت التالي في الطابور! يرجى الاستعداد.");
         }
@@ -389,7 +394,7 @@ function QStatusPage() {
         // Use cached location from home page
         const origin = this._userLocation;
 
-        if (!origin || !origin.lat || !origin.lng) {
+        if (!origin || !Number.isFinite(origin.lat) || !Number.isFinite(origin.lng)) {
           console.warn("⚠️ User location unavailable (home page didn't save it)");
           this.data.queue.etaMinutes = null;
           return;

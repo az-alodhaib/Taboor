@@ -1100,6 +1100,55 @@ app.post('/predict-wait', async (req, res) => {
 
 // STEP DATABASE
 // ---------- Queue Members ----------
+async function getQueuePositionInfo(queueId, userId) {
+  try {
+    // Get user's active ticket
+    const myTicket = await getSQL(
+      `SELECT * FROM queue_members
+       WHERE queue_id = ? AND user_id = ? AND status IN ('waiting','called')
+       ORDER BY id DESC LIMIT 1`,
+      [queueId, userId]
+    );
+
+    if (!myTicket) {
+      return { position: null, peopleAhead: 0, totalInLine: 0 };
+    }
+
+    // Count people AHEAD of me (earlier ticket_number, still active)
+    const aheadRow = await getSQL(
+      `SELECT COUNT(*) AS ahead
+       FROM queue_members
+       WHERE queue_id = ? 
+         AND status IN ('waiting','called')
+         AND ticket_number < ?`,
+      [queueId, myTicket.ticket_number]
+    );
+
+    const peopleAhead = Number(aheadRow?.ahead || 0);
+    const myPosition = peopleAhead + 1;
+
+    // Total people in line (including me)
+    const totalRow = await getSQL(
+      `SELECT COUNT(*) AS total
+       FROM queue_members
+       WHERE queue_id = ? AND status IN ('waiting','called')`,
+      [queueId]
+    );
+
+    const totalInLine = Number(totalRow?.total || 0);
+
+    return {
+      position: myPosition,
+      peopleAhead: peopleAhead,
+      totalInLine: totalInLine,
+      myTicket: myTicket
+    };
+
+  } catch (e) {
+    console.error("getQueuePositionInfo error:", e);
+    return { position: null, peopleAhead: 0, totalInLine: 0 };
+  }
+}
 
 // Helper: get next ticket number inside this queue
 async function getNextTicketNumber(queue_id) {
@@ -1192,7 +1241,6 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
   if (!user_id) return res.status(400).json({ error: 'user_id is required' });
 
   try {
-    // self-note: fetch queue + business + optional service data
     const queue = await getSQL(
       `SELECT q.*,
               b.name AS business_name,
@@ -1210,59 +1258,27 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
 
     if (!queue) return res.status(404).json({ error: 'Queue not found' });
 
-    // self-note: ALWAYS fetch my latest ticket, even if it is done/left/skipped
-    const me = await getSQL(
-      `SELECT * FROM queue_members
-       WHERE queue_id = ? AND user_id = ?
-       ORDER BY id DESC LIMIT 1`,
-      [queueId, user_id]
-    );
+    const posInfo = await getQueuePositionInfo(queueId, user_id);
 
-    if (!me) {
+    if (!posInfo.myTicket) {
       return res.status(404).json({ error: 'No ticket for this user in this queue' });
     }
 
-    // self-note: people ahead only matters if I'm still active
-    const activeStatuses = ["waiting", "called"];
-    const isActive = activeStatuses.includes(me.status);
+    const me = posInfo.myTicket;
+    const isActive = ["waiting", "called"].includes(me.status);
 
-    const aheadRow = isActive
-      ? await getSQL(
-          `SELECT COUNT(*) AS ahead
-           FROM queue_members
-           WHERE queue_id = ?
-             AND status IN ('waiting','called')
-             AND id < ?`,
-          [queueId, me.id]
-        )
-      : { ahead: 0 };
-
-    const ahead = Number(aheadRow?.ahead || 0);
-
-    // self-note: if no service is set on queue, fallback to 10 (so customer page never breaks)
     const baseMinutes = Number(queue.service_duration_minutes || 10);
 
-    // self-note: total people blocking the line (waiting + called)
-    const totals = await getSQL(
-      `SELECT
-         SUM(CASE WHEN status='waiting' THEN 1 ELSE 0 END) AS waiting,
-         SUM(CASE WHEN status='called'  THEN 1 ELSE 0 END) AS called
-       FROM queue_members
-       WHERE queue_id = ?`,
-      [queueId]
-    );
+    // Linear wait = people AHEAD * service time
+    const waitMinutesLinear = isActive ? (posInfo.peopleAhead * baseMinutes) : 0;
 
-    const waitingCount = Number(totals?.waiting || 0);
-    const calledCount  = Number(totals?.called  || 0);
-    const peopleInLine = waitingCount + calledCount;
-
-    // ---------- ML prediction (optional) ----------
+    // ML prediction
     async function predictWaitMlMinutes() {
       try {
         const arrivalDate = new Date();
         const arrival_hour = arrivalDate.getHours();
 
-        const st = String(queue.service_name || "").trim(); // service_type
+        const st = String(queue.service_name || "").trim();
         const sd = String(queue.service_name || "unknown").trim();
 
         const serviceAvg = await getSQL(
@@ -1284,15 +1300,15 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
         const payload = {
           business_id: String(queue.business_id),
           arrival_hour: Number(arrival_hour),
-          queue_length: Number(peopleInLine),
+          queue_length: Number(posInfo.totalInLine),
           service_type: st,
           service_details: sd,
           avg_service_time: Number(avg_service_time),
           hourly_avg_service_time: Number(hourly_avg_service_time)
         };
 
-          const predictUrl = new URL("predict", ML_URL).toString();
-          const r = await fetch(predictUrl, {
+        const predictUrl = new URL("predict", ML_URL).toString();
+        const r = await fetch(predictUrl, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload)
@@ -1314,20 +1330,17 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
       }
     }
 
-    // self-note: only ask ML when user is still active; otherwise it is pointless
     const ml_wait_minutes = isActive ? await predictWaitMlMinutes() : null;
-
-    // self-note: linear wait until my turn (people ahead * baseMinutes)
-    const waitMinutesLinear = isActive ? (ahead * baseMinutes) : 0;
 
     res.json({
       ticket_number: me.ticket_number,
       status: me.status,
-      position: isActive ? (ahead + 1) : null,
+      position: posInfo.position,
+      people_ahead: posInfo.peopleAhead,
       wait_minutes: waitMinutesLinear,
       wait_minutes_ml: ml_wait_minutes,
       service_duration_minutes: baseMinutes,
-      people_in_line: peopleInLine,
+      people_in_line: posInfo.totalInLine,
       is_finished: !isActive,
       business: {
         id: queue.business_id,

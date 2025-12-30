@@ -35,24 +35,25 @@
       <div class="col-sm-4">
         <div class="stat-card">
           <div class="label">موقعك في الطابور</div>
-          <div class="value" x-text="'#' + data.queue.position"></div>
+          <div class="value" x-text="data.queue.position != null ? '#' + data.queue.position : '-'"></div>
         </div>
       </div>
       <div class="col-sm-4">
         <div class="stat-card">
-          <div class="label">عدد المنتظرين</div>
-          <div class="value" x-text="data.queue.totalPeople"></div>
+          <div class="label">عدد المنتظرين أمامك</div>
+          <div class="value" x-text="data.queue.position != null ? Math.max(0, data.queue.position - 1) : '-'"></div>
         </div>
       </div>
       <div class="col-sm-4">
         <div class="stat-card">
           <div class="label">وقت الانتظار</div>
-          <div class="value" x-text="(data.queue.waitMinutes ?? data.queue.estMinutes ?? 0) + ' دقيقة'"></div>
+          <div class="value" x-text="data.queue.waitMinutes + ' دقيقة'"></div>
           <div class="small text-muted" x-text="data.queue.waitLabel"></div>
         </div>
       </div>
     </div>
-    <!-- ETA (Travel time only) - Unique place -->
+
+    <!-- ETA (Travel time only) -->
     <div class="card mb-3">
       <div class="card-body">
         <div class="d-flex align-items-center justify-content-between">
@@ -64,21 +65,18 @@
           </div>
 
           <div class="fs-5 fw-bold">
-          <span x-show="data.queue.estimationMinutes != null"
-              x-text="Math.max(0, Math.ceil(data.queue.estimationMinutes)) + ' دقيقة'">
-          </span>
+            <span x-show="data.queue.etaMinutes != null"
+                  x-text="Math.max(0, Math.ceil(data.queue.etaMinutes)) + ' دقيقة'">
+            </span>
 
-          <span x-show="data.queue.estimationMinutes == null"
-              class="text-muted">
-                   غير متاح
-          </span>
-          </div>
+            <span x-show="data.queue.etaMinutes == null"
+                  class="text-muted">
+              غير متاح
+            </span>
           </div>
         </div>
+      </div>
     </div>
-
-
-    <!-- (Removed) progress bar -->
 
     <div class="card mb-4">
       <div class="card-body">
@@ -97,8 +95,12 @@
     </div>
 
     <div class="d-grid gap-2">
-      <!-- Shows when you are next in line -->
-      <button class="btn btn-done btn-done-appear" x-show="data.queue.position === 1" @click="confirmDone">تم</button>
+      <!-- Done button: ONLY shows when status = "called" -->
+      <button class="btn btn-done btn-done-appear" 
+              x-show="data.queue.status === 'called'" 
+              @click="confirmDone">
+        تم
+      </button>
 
       <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#leaveModal">
         مغادرة الطابور
