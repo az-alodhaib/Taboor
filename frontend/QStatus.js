@@ -51,11 +51,11 @@ function QStatusPage() {
     dots: "",
     
     // ============================================
-    // COUNTDOWN STATE (never from localStorage)
+    // COUNTDOWN STATE (persisted in localStorage)
     // ============================================
     // These variables control the wait time countdown.
+    // They are stored in localStorage so countdown survives page refresh.
     // They are reset ONLY when position changes (someone ahead leaves/finishes).
-    // This prevents countdown from resetting on page refresh.
     _baseWaitMinutes: null,        // Initial wait time from server
     _countdownStartTime: null,     // When countdown started (timestamp)
     _countdownTimer: null,         // Interval timer for countdown
@@ -65,6 +65,11 @@ function QStatusPage() {
     _notifiedNext: false,          // Track if "you're next" notification was shown
     _userLocation: null,           // User's GPS location (from home page)
     _lastPosition: null,           // Track last position to detect queue changes
+    
+    // LocalStorage keys for countdown persistence
+    _STORAGE_KEY_BASE_WAIT: "qstatus_baseWaitMinutes",
+    _STORAGE_KEY_START_TIME: "qstatus_countdownStartTime",
+    _STORAGE_KEY_POSITION: "qstatus_lastPosition",
 
     // ============================================
     // INIT
@@ -75,12 +80,67 @@ function QStatusPage() {
       
       this.loadQueueDataFromStorage();
       this._loadUserLocationFromStorage();
+      this._loadCountdownStateFromStorage();  // Load persisted countdown
       this.startAutoRefresh();
       this._startWaitCountdown();
       this._animateDots();
       this.refreshEtaTravelOnly();
       
       console.log("✅ QStatus ready");
+    },
+    
+    // ============================================
+    // LOAD/SAVE COUNTDOWN STATE (for page refresh)
+    // ============================================
+    
+    _loadCountdownStateFromStorage() {
+      try {
+        const baseWait = localStorage.getItem(this._STORAGE_KEY_BASE_WAIT);
+        const startTime = localStorage.getItem(this._STORAGE_KEY_START_TIME);
+        const lastPos = localStorage.getItem(this._STORAGE_KEY_POSITION);
+        
+        if (baseWait !== null) {
+          this._baseWaitMinutes = Number(baseWait);
+        }
+        if (startTime !== null) {
+          this._countdownStartTime = Number(startTime);
+        }
+        if (lastPos !== null) {
+          this._lastPosition = Number(lastPos);
+        }
+        
+        console.log("✅ Countdown state loaded:", {
+          baseWait: this._baseWaitMinutes,
+          startTime: this._countdownStartTime,
+          lastPos: this._lastPosition
+        });
+      } catch (e) {
+        console.warn("⚠️ Countdown state load failed:", e);
+      }
+    },
+    
+    _saveCountdownStateToStorage() {
+      try {
+        if (this._baseWaitMinutes !== null) {
+          localStorage.setItem(this._STORAGE_KEY_BASE_WAIT, String(this._baseWaitMinutes));
+        }
+        if (this._countdownStartTime !== null) {
+          localStorage.setItem(this._STORAGE_KEY_START_TIME, String(this._countdownStartTime));
+        }
+        if (this._lastPosition !== null) {
+          localStorage.setItem(this._STORAGE_KEY_POSITION, String(this._lastPosition));
+        }
+      } catch (e) {
+        console.warn("⚠️ Countdown state save failed:", e);
+      }
+    },
+    
+    _clearCountdownStateFromStorage() {
+      try {
+        localStorage.removeItem(this._STORAGE_KEY_BASE_WAIT);
+        localStorage.removeItem(this._STORAGE_KEY_START_TIME);
+        localStorage.removeItem(this._STORAGE_KEY_POSITION);
+      } catch (e) {}
     },
 
     // ============================================
@@ -239,20 +299,23 @@ function QStatusPage() {
         });
 
         // ============================================
-        // COUNTDOWN RESET LOGIC
+        // COUNTDOWN RESET LOGIC (with localStorage persistence)
         // ============================================
         // Only reset countdown if:
-        // 1. First poll (baseWaitMinutes is null)
+        // 1. First poll AND no saved state (truly fresh start)
         // 2. Position changed (someone ahead finished/left)
         //
-        // This prevents countdown from resetting on page refresh!
+        // Countdown survives page refresh because state is in localStorage!
         
         const newPosition = Number(json.position || 0);
         const positionChanged = this._lastPosition !== null && this._lastPosition !== newPosition;
         
-        if (this._baseWaitMinutes === null || positionChanged) {
+        // Check if this is truly first time (no saved countdown state)
+        const isFirstTimeEver = this._baseWaitMinutes === null && this._countdownStartTime === null;
+        
+        if (isFirstTimeEver || positionChanged) {
           console.log("🔄 Countdown reset:", {
-            reason: this._baseWaitMinutes === null ? "first poll" : "position changed",
+            reason: isFirstTimeEver ? "first time (no saved state)" : "position changed",
             oldPosition: this._lastPosition,
             newPosition,
             newWaitMinutes: effectiveWait
@@ -260,9 +323,15 @@ function QStatusPage() {
           
           this._baseWaitMinutes = effectiveWait;
           this._countdownStartTime = Date.now();
+          this._lastPosition = newPosition;
+          
+          // Save to localStorage so it survives refresh
+          this._saveCountdownStateToStorage();
+        } else {
+          // Just update position tracking (don't reset countdown)
+          this._lastPosition = newPosition;
+          this._saveCountdownStateToStorage();
         }
-        
-        this._lastPosition = newPosition;
 
         // Update current countdown value
         const remainingNow = this._computeRemainingWaitMinutes();
@@ -298,6 +367,7 @@ function QStatusPage() {
         if (json.is_finished) {
           this.stopAutoRefresh();
           this._stopWaitCountdown();
+          this._clearCountdownStateFromStorage();  // Clear countdown state
           
           const status = String(json.status || "").toLowerCase();
           
@@ -433,6 +503,7 @@ function QStatusPage() {
 
       if (!queueId || !userId) {
         localStorage.removeItem("queueStatus");
+        this._clearCountdownStateFromStorage();  // Clear countdown state
         window.location.href = "home_page.html";
         return;
       }
@@ -449,6 +520,7 @@ function QStatusPage() {
           
           if (res.status === 404) {
             localStorage.removeItem("queueStatus");
+            this._clearCountdownStateFromStorage();  // Clear countdown state
             window.location.href = "home_page.html";
             return;
           }
@@ -463,6 +535,7 @@ function QStatusPage() {
       }
 
       localStorage.removeItem("queueStatus");
+      this._clearCountdownStateFromStorage();  // Clear countdown state
       window.location.href = "home_page.html";
     },
 
@@ -475,6 +548,7 @@ function QStatusPage() {
       if (!queueId || !userId) {
         alert("تم إكمال خدمتك بنجاح 🎉");
         localStorage.removeItem("queueStatus");
+        this._clearCountdownStateFromStorage();  // Clear countdown state
         window.location.href = "home_page.html";
         return;
       }
@@ -514,6 +588,7 @@ function QStatusPage() {
 
       alert("تم إكمال خدمتك بنجاح 🎉");
       localStorage.removeItem("queueStatus");
+      this._clearCountdownStateFromStorage();  // Clear countdown state
       window.location.href = "home_page.html";
     }
   };

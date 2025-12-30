@@ -49,6 +49,64 @@ const ML_URL = (process.env.ML_URL || "https://taboor-ml.onrender.com").trim();
 console.log("ML_URL env =", process.env.ML_URL);
 console.log("ML_URL final =", ML_URL);
 
+// =============================================
+// ML SERVICE TYPE MAPPING (Arabic → English)
+// =============================================
+// The ML model was trained on English labels only.
+// We must map Arabic service names to English before calling ML.
+
+const SERVICE_TYPE_MAP = {
+  // Arabic → English
+  "حلاقة": "barber",
+  "صالون حلاقة": "barber",
+  "صالون": "barber",
+  "غسيل سيارات": "car wash",
+  "غسيل": "car wash",
+  "ورشة": "workshop",
+  "مطعم": "workshop",      // fallback
+  "مقهى": "workshop",       // fallback
+  "عيادة": "workshop",      // fallback
+  "متجر": "workshop",       // fallback
+  // English (pass through)
+  "barber": "barber",
+  "car wash": "car wash",
+  "workshop": "workshop"
+};
+
+const SERVICE_DETAILS_MAP = {
+  // Arabic → English
+  "حلاقة شعر": "haircut",
+  "قص شعر": "haircut",
+  "لحية": "beard",
+  "ذقن": "beard",
+  "حلاقة ولحية": "beard and haircut",
+  "حلاقة شعر ولحية": "beard and haircut",
+  "سيارة صغيرة": "small car",
+  "سيارة كبيرة": "big car",
+  "تغيير زيت": "oil change",
+  "زيت": "oil change",
+  // English (pass through)
+  "beard": "beard",
+  "haircut": "haircut",
+  "beard and haircut": "beard and haircut",
+  "small car": "small car",
+  "big car": "big car",
+  "oil change": "oil change"
+};
+
+// Helper function to map service names for ML
+function mapServiceForML(serviceType, serviceDetails) {
+  const mappedType = SERVICE_TYPE_MAP[serviceType] || SERVICE_TYPE_MAP[serviceType?.toLowerCase()] || "barber";
+  const mappedDetails = SERVICE_DETAILS_MAP[serviceDetails] || SERVICE_DETAILS_MAP[serviceDetails?.toLowerCase()] || "haircut";
+  
+  console.log("🔄 ML Service Mapping:", {
+    original: { serviceType, serviceDetails },
+    mapped: { type: mappedType, details: mappedDetails }
+  });
+  
+  return { mappedType, mappedDetails };
+}
+
 
 
 // =============================================
@@ -1007,6 +1065,9 @@ app.post('/predict-wait', async (req, res) => {
     // self-note: normalize service strings (ML expects strings even if empty)
     const st = String(service_type || "").trim();
     const sd = String(service_details || "").trim();
+    
+    // Map Arabic → English for ML model
+    const { mappedType, mappedDetails } = mapServiceForML(st, sd);
 
     // self-note: parse arrival_time and derive arrival_hour feature
     const arrivalDate = new Date(arrival_time);
@@ -1034,15 +1095,22 @@ app.post('/predict-wait', async (req, res) => {
     const hourly_avg_service_time = Number(hourlyAvg?.hourly_avg) || 30;
 
     // self-note: FastAPI schema expects business_id as string; keep all numeric features numbers
+    // Use MAPPED English values for ML model
     const payload = {
       business_id: String(business_id),
       arrival_hour: Number(arrival_hour),
       queue_length: Number(queue_length),
-      service_type: st,
-      service_details: sd,
+      service_type: mappedType,        // English for ML
+      service_details: mappedDetails,  // English for ML
       avg_service_time: Number(avg_service_time),
       hourly_avg_service_time: Number(hourly_avg_service_time)
     };
+
+    console.log("🤖 ML predict-wait:", {
+      original: { service_type: st, service_details: sd },
+      mapped: { service_type: mappedType, service_details: mappedDetails },
+      payload
+    });
 
     // self-note: call ML service (Node acts as feature-builder + validator)
     const predictUrl = new URL("predict", ML_URL).toString(); 
@@ -1298,7 +1366,7 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     // ============================================
     // LINEAR BASELINE 
     // ============================================
-    // Formula from  people_ahead × service_duration
+    //  people_ahead × service_duration
     // IMPORTANT: Position 1 (peopleAhead = 0) → ALWAYS 0 wait time
     
     let linear_wait_minutes = 0;
@@ -1320,38 +1388,54 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
         const arrivalDate = new Date();
         const arrival_hour = arrivalDate.getHours();
 
-        const st = String(queue.service_name || "").trim();
-        const sd = String(queue.service_name || "unknown").trim();
+        // Original service names (may be Arabic)
+        const originalServiceType = String(queue.service_name || "").trim();
+        const originalServiceDetails = String(queue.service_name || "unknown").trim();
+        
+        // Map Arabic → English for ML model
+        const { mappedType, mappedDetails } = mapServiceForML(originalServiceType, originalServiceDetails);
 
         // Calculate historical averages for ML features
+        // NOTE: If historical_data is empty, this falls back to baseMinutes (business's static time)
         const serviceAvg = await getSQL(
-          `SELECT AVG(service_duration) as avg_time
+          `SELECT AVG(service_duration) as avg_time, COUNT(*) as count
            FROM historical_data
            WHERE business_id = ? AND service_type = ? AND service_details = ?`,
-          [queue.business_id, st, sd]
+          [queue.business_id, originalServiceType, originalServiceDetails]
         );
         const avg_service_time = Number(serviceAvg?.avg_time) || baseMinutes;
+        const historyCount = Number(serviceAvg?.count) || 0;
 
         const hourlyAvg = await getSQL(
-          `SELECT AVG(service_duration) as hourly_avg
+          `SELECT AVG(service_duration) as hourly_avg, COUNT(*) as count
            FROM historical_data
            WHERE business_id = ? AND strftime('%H', arrival_time) = ?`,
           [queue.business_id, String(arrival_hour).padStart(2, "0")]
         );
         const hourly_avg_service_time = Number(hourlyAvg?.hourly_avg) || baseMinutes;
+        const hourlyHistoryCount = Number(hourlyAvg?.count) || 0;
 
-        // ML payload
-        //  Use peopleAhead instead of totalInLine
-        // ML should predict based on people AHEAD of the user, not total queue
+        // ML payload - use MAPPED English values for service_type and service_details
+        // This ensures ML model recognizes the categories it was trained on
         const payload = {
           business_id: String(queue.business_id),
           arrival_hour: Number(arrival_hour),
-          queue_length: Number(peopleAhead),  // was totalInLine
-          service_type: st,
-          service_details: sd,
+          queue_length: Number(peopleAhead),
+          service_type: mappedType,        // English for ML
+          service_details: mappedDetails,  // English for ML
           avg_service_time: Number(avg_service_time),
           hourly_avg_service_time: Number(hourly_avg_service_time)
         };
+
+        console.log("🤖 ML Request:", {
+          payload,
+          originalService: { type: originalServiceType, details: originalServiceDetails },
+          historicalData: {
+            serviceHistoryCount: historyCount,
+            hourlyHistoryCount: hourlyHistoryCount,
+            note: historyCount === 0 ? "⚠️ No historical data - ML will use static service time as base" : "✅ Using real historical data"
+          }
+        });
 
         const predictUrl = new URL("predict", ML_URL).toString();
         const r = await fetch(predictUrl, {
@@ -1366,6 +1450,14 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
           try { result = JSON.parse(text); } catch { }
 
           const predicted = Number(result.predicted_wait_minutes ?? result.predicted_wait ?? result.minutes);
+          
+          console.log("🤖 ML Response:", {
+            predicted_wait_minutes: predicted,
+            linear_wait_minutes,
+            difference: predicted - linear_wait_minutes,
+            willUse: predicted > linear_wait_minutes ? "ML (higher)" : "Linear (higher or equal)"
+          });
+          
           if (Number.isFinite(predicted) && predicted >= 0) {
             ml_wait_minutes = predicted;
           }
@@ -1379,7 +1471,7 @@ app.get('/queues/:queueId/user-status', async (req, res) => {
     // ============================================
     // FINAL DECISION RULE 
     // ============================================
-    // From  "To avoid underestimation and keep user trust, 
+    //  "To avoid underestimation and keep user trust, 
     // the displayed wait time is the safer value"
     //
     // SPECIAL CASE: Position 1 (peopleAhead = 0) → ALWAYS 0 wait time
