@@ -1,4 +1,9 @@
 /* Gradient header */
+body {
+  font-family: 'Tajawal', sans-serif;
+  background-color: #f7f9fc;
+}
+
 .header-gradient {
   background: linear-gradient(135deg, #2196F3 0%, #00BCD4 100%);
   color: white;
@@ -23,7 +28,7 @@
   color: #1f2937;
 }
 
-/* (Removed) progress bar styles */
+
 
 /* ===== Done Button (تم) ===== */
 .btn-done {
