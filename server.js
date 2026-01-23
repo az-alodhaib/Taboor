@@ -412,10 +412,78 @@ function safeAddColumn(table, colDef) {
       await safeAddColumn("queue_members", "service_id INTEGER");
 
       console.log("DB migration done");
+      
+      // Seed mock business after migration completes
+      await seedMockBusiness();
     }   catch (e) {
       console.error("DB migration error:", e);
     }
   })();
+
+// =============================================
+// MOCK BUSINESS SEEDING
+// =============================================
+async function seedMockBusiness() {
+  const MOCK_EMAIL = "mock@taboor.test";
+  const MOCK_PHONE = "1111111111111";
+  
+  try {
+    const existing = await getSQL(
+      `SELECT id FROM businesses WHERE email = ? OR phone = ?`,
+      [MOCK_EMAIL, MOCK_PHONE]
+    );
+    
+    if (existing) {
+      console.log("✅ Mock business already exists (ID:", existing.id, ")");
+      return;
+    }
+    
+    const hashedPassword = await bcrypt.hash("mock12345", 10);
+    
+    const bizResult = await runSQL(
+      `INSERT INTO businesses (
+        name, email, password, category, address, latitude, longitude, phone,
+        is_active, email_verified
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, 1)`,
+      [
+        "الحلاق الامثل",
+        MOCK_EMAIL,
+        hashedPassword,
+        "barber",
+        "الرياض, الربوة",
+        24.685879,
+        46.764390,
+        MOCK_PHONE,
+      ]
+    );
+    
+    const businessId = bizResult.lastID;
+    console.log("✅ Mock business created (ID:", businessId, ")");
+    
+    await runSQL(
+      `INSERT INTO services (business_id, name, description, duration_minutes, price, is_active)
+       VALUES (?, ?, ?, ?, ?, 1)`,
+      [businessId, "حلاقة شعر", "قص وتصفيف الشعر", 20, 15]
+    );
+    
+    await runSQL(
+      `INSERT INTO services (business_id, name, description, duration_minutes, price, is_active)
+       VALUES (?, ?, ?, ?, ?, 1)`,
+      [businessId, "حلاقة ذقن", "حلاقة وتشذيب الذقن", 15, 15]
+    );
+    
+    await runSQL(
+      `INSERT INTO queues (business_id, service_id, status)
+       VALUES (?, NULL, 'open')`,
+      [businessId]
+    );
+    
+    console.log("🎉 Mock business ready: الحلاق الامثل");
+    
+  } catch (e) {
+    console.error("❌ Mock business seeding error:", e);
+  }
+}
 
 
 // =============================================

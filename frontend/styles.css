@@ -47,3 +47,17 @@ a {
 a:hover {
     color: #1976D2;
 }
+
+.btn1 {
+    background: linear-gradient(to right, #6a11cb, #2575fc);
+    border: none;
+    color: white;
+    padding: 12px;
+    border-radius: 8px;
+}
+
+.btn1:hover {
+    background: linear-gradient(to right, #5a0fb0, #1f63d6);
+    color: white;
+}
+

@@ -7,8 +7,6 @@
         {
             "type": "chrome",
             "request": "launch",
-            "name": "Open home_page.html",
-            "file": "c:\\Users\\aldooon\\Taboor\\frontend\\home_page.html"
         }
     ]
 }
